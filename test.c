@@ -1,2 +1,0 @@
-s
-created by joel
