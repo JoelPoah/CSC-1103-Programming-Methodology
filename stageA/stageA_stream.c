@@ -19,7 +19,7 @@
 #include "../helper_function/trade_io.h"
 
 /* ---- hardcoded paths (relative to the project root) ---- */
-#define TEST20_PATH   "data/group_data/test20.csv"
+#define TEST20_PATH   "data/group_data/test20.csv" //hardcoded path of test 20 
 #define DEV_PATH      "data/group_data/dev_1M.csv"
 #define SIGNALS_DAT   "stageA/signals.dat"
 #define PLOT_SCRIPT   "stageA/plot_signals.gnuplot"
