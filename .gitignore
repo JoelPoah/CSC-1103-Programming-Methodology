@@ -1,0 +1,40 @@
+# PDFs (project brief, report, etc.)
+*.pdf
+
+# Datasets (stress_full is ~700 MB; group CSVs are not to be committed)
+data/*.csv
+data/**/*.csv
+
+# Build outputs - Windows executables (gcc adds .exe)
+*.exe
+
+# Build outputs - executables and object files on Linux / Mac (names from Makefile)
+*.o
+*.out
+stage0/question_a/a_loop_sum
+stage0/question_b/loop_sum
+stage0/question_b/recursion_sum
+stage0/question_b/loop_sum_O0
+stage0/question_b/loop_sum_O1
+stage0/question_b/loop_sum_O2
+stage0/question_b/loop_sum_O3
+stage0/question_b/recursion_sum_O0
+stage0/question_b/recursion_sum_O1
+stage0/question_b/recursion_sum_O2
+stage0/question_b/recursion_sum_O3
+helper_function/test_helpers
+stageA/stageA_stream
+
+# Stage folders: only the .gitkeep placeholders are committed
+stageA_plus/*
+!stageA_plus/.gitkeep
+stageB/*
+!stageB/.gitkeep
+stageC/*
+!stageC/.gitkeep
+
+# Generated data dumps and temporary artifacts
+*.dat
+*.log
+*.zip
+vgcore.*

@@ -1,0 +1,3 @@
+.\a_loop_sum.exe
+sum: 5000000050000000
+Time taken: 66927900 ns

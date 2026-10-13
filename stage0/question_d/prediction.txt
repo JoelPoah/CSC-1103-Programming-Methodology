@@ -1,0 +1,7 @@
+We predicted that the higher the optimization level the better it is.
+
+Expected: the different O increment would makes it run faster. significant difference appear from O0 to O2
+        Result: it ran faster on O2 than O0.
+        Reason: The opimisation of the compiler allows the to skip/streamline the instructions. 
+        such as keeping the variables in CPU registers. constantly checking i <= n 
+        can be changed to be more efficient, .etc.
