@@ -29,6 +29,7 @@
 #define TEST20_PATH   "data/group_data/test20.csv"
 #define DEV_PATH      "data/group_data/dev_1M.csv"
 #define SIGNALS_DAT   "stageA/signals.dat"
+#define PLOT_SCRIPT "stageA/plot_signals.gnuplot"
 
 /* ---- SMA windows ---- */
 #define TEST_SHORT 3
@@ -79,41 +80,34 @@ static int run(const char *path, int short_win, int long_win, int print_table,
     /* TODO */
     
     if (!open_trades(path)){
+        printf("cannot open %s\n", path); 
         return 1; // fail
     }
 
 
     /* STEP 3 - open the .dat output (only if dat_path is not NULL)
-     * Hint: dat_open(path) returns a FILE * or NULL. Check for NULL.
+     * Hint: dat_open(path) returns 1 if OK, 0 if not. The file itself stays
+     * inside report.c, so there is no FILE pointer here.
      */
     /* TODO */
-    FILE *dat = NULL;
     if (dat_path != NULL ){
-        dat = dat_open(dat_path);
-        if (dat == NULL){
+        if (!dat_open(dat_path)){
             printf("Failed to open .dat %s\n", dat_path);
             close_trades();
             return 1;
         }
     }
-    /* STEP 4 - set up the state objects
-     * Create one Vwap, one OhlcBar, two Sma (short and long) and one Crossover.
-     * Call the matching *_init function for each one.
-     * Hint: an Sma needs its window size passed to sma_init.
+    /* STEP 4 - reset every calculation
+     * Each module keeps its own variables, so just call its *_init function.
+     * Hint: sma_init needs the window id (SHORT_SMA / LONG_SMA) and its size.
      */
     /* TODO */
-    Vwap vwap;
-    OhlcBar bar, finished;
-    Sma short_sma, long_sma;
-    Crossover crossover_signal;
-    int signal;
     int signal_printed = 0;
-    vwap_init(&vwap);
-    ohlc_init(&bar);
-    ohlc_init(&finished);
-    sma_init(&short_sma, short_win);
-    sma_init(&long_sma, long_win); 
-    crossover_init(&crossover_signal);
+    vwap_init();
+    ohlc_init();
+    sma_init(SHORT_SMA, short_win);
+    sma_init(LONG_SMA, long_win);
+    crossover_init();
 
     /* STEP 5 - print the table header (only if print_table is 1) */
     /* TODO */
@@ -130,7 +124,7 @@ static int run(const char *path, int short_win, int long_win, int print_table,
      *   6a) VWAP:  vwap_update(...)
      *   6b) OHLC:  ohlc_update(...)  - if it returns 1, print the finished
      *              bar (only when print_table is 1)
-     *   6c) SMA:   push the price into both Sma objects
+     *   6c) SMA:   push the price into both windows (SHORT_SMA and LONG_SMA)
      *   6d) If both SMAs are ready (sma_ready), get their values with sma_value
      *       and call crossover_update to get SIG_BUY / SIG_SELL / SIG_NONE.
      *       Remember: the short and long values may not exist for the first
@@ -141,28 +135,48 @@ static int run(const char *path, int short_win, int long_win, int print_table,
      *       long SMA is ready, write a row to the .dat file.
      */
     /* TODO */
-    vwap_update(&vwap, trade_price(), trade_qty());
-    ohlc_update(&bar, trade_time(), trade_price(), &finished);
-    sma_push(&short_sma, trade_price());
-    sma_push(&long_sma, trade_price());
+    while (next_trade()){
+        int signal = SIG_NONE;
+        double short_sma_value = 0.0, long_sma_value = 0.0;
+        vwap_update(trade_price(), trade_qty());
+        if (ohlc_update(trade_time(), trade_price()) && print_table == 1){
+            print_bar(ohlc_finished_sec(), ohlc_finished_open(), ohlc_finished_high(), ohlc_finished_low(),
+            ohlc_finished_close(), ohlc_finished_n());
+        }
+        sma_push(SHORT_SMA, trade_price());
+        sma_push(LONG_SMA, trade_price());
 
-    if (sma_ready(&short_sma) & sma_ready(&long_sma)){
-        double short_sma_value = sma_value(&short_sma);
-        double long_sma_value = sma_value(&long_sma);
-        signal = crossover_update(&crossover_signal, short_sma_value, long_sma_value);
+        int have_sma_short = sma_ready(SHORT_SMA);
+        int have_sma_long = sma_ready(LONG_SMA);
+        if (have_sma_short){
+            short_sma_value = sma_value(SHORT_SMA);
+        }
+
+        if (have_sma_long){
+            long_sma_value = sma_value(LONG_SMA);
+        }
+
+        if (have_sma_short && have_sma_long){
+            signal = crossover_update(short_sma_value, long_sma_value);
+        }
 
         if (print_table == 1){
-            printf("print row");
-        }else{
-            printf("printing first 10 only");
-        }    
+                print_trade_row(trade_number(), trade_price(), trade_qty(), trade_is_buy(),
+                vwap_value(), have_sma_short, short_sma_value, have_sma_long,
+                long_sma_value, signal);
+        }
+        else if (signal != SIG_NONE && signal_printed < 10){
+                print_signal(signal, trade_number());
+                signal_printed++;
+        }
 
-            // trade number
-        if ((trade_number() > slice_from) && (trade_number < slice_to) && (sma_ready(&long_sma))){
+        // trade number (dat_write_row does nothing if no .dat file is open)
+        if (have_sma_long && (trade_number() >= slice_from) && (trade_number() <= slice_to)){
             //write a row to .dat file
-            dat_write_row(dat, trade_number(), trade_price(), short_sma_value, long_sma_value, trade_is_buy());
-        } 
+            dat_write_row(trade_number(), trade_price(), short_sma_value, long_sma_value, signal);
+        }
     }
+
 
 
 
@@ -170,18 +184,20 @@ static int run(const char *path, int short_win, int long_win, int print_table,
      * Hint: print the last OHLC bar (only when print_table is 1), then close
      * the .dat file and call close_trades().
      */
-    if (print_table == 1 && bar.active) {
-        print_bar(bar.sec, bar.open, bar.high, bar.low,
-                  bar.close, bar.n);
+    if (ohlc_flush() && print_table == 1) {
+        print_bar_header();
+        print_bar(ohlc_finished_sec(), ohlc_finished_open(), ohlc_finished_high(), ohlc_finished_low(),
+                  ohlc_finished_close(), ohlc_finished_n());
     }
-    dat_close(dat);
+    dat_close();
     close_trades();
 
     /* STEP 8 - print the summary (print_summary) with the final VWAP and the
-     * BUY / SELL counts from the Crossover struct.
+     * BUY / SELL counts (crossover_buys / crossover_sells).
      */
-    print_summary(vwap_value(&vwap), crossover_signal.buys,
-                  crossover_signal.sells);
+    print_summary(vwap_value(), crossover_buys(), crossover_sells());
+    
+    return 0;
 
 }
 
@@ -203,6 +219,12 @@ int main(void) {
     if (run(DEV_PATH, DEV_SHORT, DEV_LONG, 0,
             SLICE_START, SLICE_START + SLICE_LEN - 1, SIGNALS_DAT) != 0) {
         return 1;
+    }
+
+    /* PART C - draw signals.png */
+    printf("\nRunning gnuplot on %s ...\n", PLOT_SCRIPT);
+    if (system("gnuplot " PLOT_SCRIPT) != 0) {
+        printf("gnuplot failed or is not installed; signals.dat is still written.\n");
     }
 
     return 0;

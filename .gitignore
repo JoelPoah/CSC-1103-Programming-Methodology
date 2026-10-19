@@ -25,14 +25,6 @@ stage0/question_b/recursion_sum_O3
 helper_function/test_helpers
 stageA/stageA_stream
 
-# Stage folders: only the .gitkeep placeholders are committed
-stageA_plus/*
-!stageA_plus/.gitkeep
-stageB/*
-!stageB/.gitkeep
-stageC/*
-!stageC/.gitkeep
-
 # Generated data dumps and temporary artifacts
 *.dat
 *.log
