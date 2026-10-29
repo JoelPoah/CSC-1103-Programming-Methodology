@@ -1,0 +1,128 @@
+a:
+    O0:
+        Time taken: 99496700 ns
+        Time taken: 101610100 ns
+        Time taken: 90211200 ns
+
+    O1:
+        Time taken: 45226900 ns
+        Time taken: 53072900 ns
+        Time taken: 48665300 ns
+
+    O2:
+        Time taken: 0 ns
+        Time taken: 100 ns
+        Time taken: 100 ns
+
+    O3:
+        Time taken: 0 ns
+        Time taken: 100 ns
+        Time taken: 100 ns
+
+    Expected: the higher the O increment the faster the time taken.
+    Result: time taken for O2 is similiar to O3.
+    Reason: The compiler process are Opimised based on the different O increments. 
+
+b:
+    O0:
+        Time taken: 646600 ns
+        Time taken: 645700 ns
+        Time taken: 919600 ns
+
+    O1:
+        Time taken: 663800 ns
+        Time taken: 682100 ns
+        Time taken: 679100 ns
+
+    O2:
+        Time taken: 95500 ns
+        Time taken: 97800 ns
+        Time taken: 106700 ns
+    O3:
+        Time taken: 143900 ns
+        Time taken: 104600 ns
+        Time taken: 127300 ns
+
+    Expected: take longer than for loop as function requires overhead to be called.
+    Result: Took longer than regular for loop.
+    Reason: every call of the function requires the overhead of the creation of stack frames, store local variables, store return address, jump to function.
+
+c:
+    O0:
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 877200 ns
+
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 721400 ns
+
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 1105700 ns
+    
+    O1:
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 746800 ns
+
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 849400 ns
+
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 869700 ns
+
+    O2:
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 53800 ns
+
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 39400 ns
+
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 29200 ns
+
+    O3:
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 42000 ns
+
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 31800 ns
+
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        sum: 50005000
+        [LED GREEN OFF]
+        Time taken: 514700 ns
+
+        Expected: the different O increment would makes it run faster. significant difference appear from O0 to O2
+        Result: it ran faster on O2 than O0.
+        Reason: The opimisation of the compiler allows the to skip/streamline the instructions. such as keeping the variables in CPU registers. constantly checking i <= n can be changed to be more efficient, .etc.

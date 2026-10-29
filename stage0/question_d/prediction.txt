@@ -1,7 +1,17 @@
-We predicted that the higher the optimization level the better it is.
+Prediction 1: Higher optimisation level = faster
 
 Expected: the different O increment would makes it run faster. significant difference appear from O0 to O2
-        Result: it ran faster on O2 than O0.
-        Reason: The opimisation of the compiler allows the to skip/streamline the instructions. 
-        such as keeping the variables in CPU registers. constantly checking i <= n 
-        can be changed to be more efficient, .etc.
+
+Result: it ran faster on O2 than O0, on both Windows and the Pi (e.g. Pi loop 42,902 ns → 81 ns, Pi recursion 114,328 ns → 1,918 ns). However, O3 was not faster than O2 on either platform.
+
+Reason: The opimisation of the compiler allows the to skip/streamline the instructions.
+such as keeping the variables in CPU registers. constantly checking i <= n
+can be changed to be more efficient, .etc. O3’s extra optimisations don’t help code this simple. The same pattern on both platforms shows the effect comes from the compiler, not the hardware.
+
+
+Prediction 2: Windows faster for loop, Pi faster for recursion
+
+Expected: Windows would run the loop faster, while the Pi would run the recursion faster.
+Result: The prediction held. Windows was about 2.8× faster for the loop, while the Pi was faster for recursion at every level (2.5× at O0, 16× at O2).
+
+Reason: The loop depends mainly on raw CPU speed, where Windows has the faster processor. Recursion depends on function-call cost, which is cheaper on ARM because it stores the return address in a register instead of on the stack like Windows x64.
