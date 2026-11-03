@@ -12,7 +12,9 @@
  *       stageB/engine/ohlc.c stageB/engine/sma.c stageB/engine/signal.c
  *       stageB/engine/report.c helper_function/trade_io.c -o stageB/stageB_inmem
  * Run (from the project root):
- *   ./stageB/stageB_inmem
+ *   ./stageB/stageB_inmem            test20, dev_1M and stress_full
+ *   ./stageB/stageB_inmem dev        test20 and dev_1M only (for valgrind /
+ *                                    memory comparison with stageC_malloc)
  *
  * Naive SMA version (for the SMA comparison): same build, plus
  *   -DNAIVE_SMA stageB/engine/sma_naive.c  and  -o stageB/stageB_inmem_naive
@@ -24,6 +26,7 @@
  */
 #include "../helper_function/timing.h"   /* must come first (see timing.h) */
 #include <stdio.h>
+#include <string.h>                      /* strcmp */
 #include "engine/trades.h"
 #include "engine/vwap.h"
 #include "engine/ohlc.h"
@@ -156,7 +159,10 @@ static int run(const char *path, int short_win, int long_win, int print_table) {
     return 0;
 }
 
-int main(void) {
+int main(int argc, char *argv[]) {
+    /* "dev" as the first argument skips stress_full (valgrind runs) */
+    int skip_stress = (argc > 1 && strcmp(argv[1], "dev") == 0);
+
 #ifdef NAIVE_SMA
     printf("SMA version: naive (re-add whole window)\n\n");
 #else
@@ -168,8 +174,10 @@ int main(void) {
     printf("\n=== dev_1M.csv (short=%d, long=%d) ===\n", DEV_SHORT, DEV_LONG);
     if (run(DEV_PATH, DEV_SHORT, DEV_LONG, 0) != 0) return 1;
 
-    printf("\n=== stress_full.csv (short=%d, long=%d) ===\n", DEV_SHORT, DEV_LONG);
-    if (run(STRESS_PATH, DEV_SHORT, DEV_LONG, 0) != 0) return 1;
+    if (!skip_stress) {
+        printf("\n=== stress_full.csv (short=%d, long=%d) ===\n", DEV_SHORT, DEV_LONG);
+        if (run(STRESS_PATH, DEV_SHORT, DEV_LONG, 0) != 0) return 1;
+    }
 
     return 0;
 }
