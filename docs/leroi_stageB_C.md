@@ -21,10 +21,12 @@ Every comparison below must follow these rules, otherwise the numbers don't coun
 | Report **time, time per trade (ns) and throughput (trades/s)** | Formulas 8, Testing 1 |
 | Report **speedup vs Version 0** = time(V0) / time(Vk) | Formulas 8, Stage B 4 |
 | Report **memory usage** for every version | Testing 1 |
-| Report **`perf stat`**: cycles, instructions, IPC, cache misses (Pi) | General Steps 9 |
+| Report **`perf stat`**: cycles, instructions, IPC, cache misses (Pi) — **in every member's own write-up** | General Steps 9, Testing 1 |
 | Every version must still **pass `test20.csv`** | Stage C note |
 | **No plot / `.dat` file writing** in timed versions | General Steps 8 |
 | Write the **prediction before measuring** (logbook entry, dated + signed) | General Steps 10 |
+| Group logbook: **≥ 6 entries, at least one per stage** (0, A, A+, B, C) | Testing 2 |
+| Report must include a **trade-off analysis** and a **deployment recommendation** for a power-/memory-limited device (Pi 5, 4 GB) | Testing 3 |
 
 Formulas:
 - time per trade = total time (ns) / number of trades
@@ -42,7 +44,7 @@ Formulas:
 | | Laptop | Raspberry Pi 5 |
 |---|---|---|
 | CPU | Intel Core Ultra X7 358H (16 threads) | _TODO_ |
-| RAM | 32 GB | _TODO_ |
+| RAM | 32 GB | 4 GB (issued kit) |
 | OS / kernel | Arch Linux, Linux 7.2.11 | _TODO_ |
 | Compiler | gcc 16.2.1 | _TODO_ (`gcc --version`) |
 | Flags | `-O2 -Wall` | _TODO_ (+ `-mcpu=cortex-a76`?) |
@@ -320,26 +322,64 @@ on a modern CPU. The fixed-point runs were also more consistent (70.2–72.2 ms 
 - **Risk:** fixed-point silently breaks if the data changes (e.g. a coin with more
   decimals, or a much larger day's volume → overflow). Double never overflows here.
 
-## 4. Memory profiling with valgrind (Stage B task 4) — TODO
-
-- `valgrind --leak-check=full ./stageB/stageB_inmem` (use `dev_1M.csv` — valgrind is slow).
-- Record: heap usage summary, "definitely lost" bytes (should be 0), peak memory.
-
----
-
-## 5. malloc array vs fixed global array (Stage C task 1) — TODO
+## 4. malloc array vs fixed global array, with valgrind (Stage C task 1) — TODO
 
 Brief: _"Replace the fixed-size array with one allocated by malloc to fit the file, and
 compare memory use."_ Also a ladder rung: _"memory allocated with malloc to fit the data
 exactly."_
 
-| Version | Memory reserved | Memory used (stress_full) | Time (laptop/Pi) | valgrind leaks |
-|---|---|---|---|---|
-| Fixed global array | 320 MB (always) | 286 MB | | n/a |
-| malloc, sized to file | | | | |
+**Where valgrind fits:** the brief never names valgrind. It is the tool that produces the
+evidence for this comparison (and for "memory usage for each version" in the per-member
+benchmark write-up). It used to be listed as a separate Stage B step; it belongs here.
 
-Memory = `sizeof(Trade)` × number of trades. Also measure actual peak with
-`/usr/bin/time -v` (Max resident set size) or valgrind massif.
+### What to measure
+| Tool | Command (use `dev_1M.csv` — valgrind is 20–50× slower) | Gives |
+|---|---|---|
+| Memcheck | `valgrind --leak-check=full ./prog` | invalid reads/writes, uninitialised values, leaks ("definitely lost" must be 0) |
+| Massif | `valgrind --tool=massif --pages-as-heap=yes ./prog` then `ms_print massif.out.<pid>` | peak memory over the run |
+| (simpler) | `/usr/bin/time -v ./prog` → "Maximum resident set size" | peak physical memory |
+
+Things to explain in the report:
+- The global `trades[]` array is **not heap memory**, so valgrind's normal heap summary
+  shows almost nothing for Stage B. Massif needs `--pages-as-heap=yes` to count it. The
+  `malloc` version **does** appear in the heap summary.
+- The OS only gives physical memory for the parts of an array that are actually touched.
+  The fixed array reserves 320 MB but `dev_1M.csv` only fills ~32 MB, so the real saving
+  from `malloc` may be smaller than "320 MB → exact size". Measure, don't assume.
+- Pi 5 has **4 GB** RAM — relevant for the "memory-limited edge device" recommendation.
+
+### Results — TODO
+| Version | File | Memory reserved | Memory used | Peak (Massif / max RSS) | Memcheck errors | Definitely lost | Process time |
+|---|---|---|---|---|---|---|---|
+| Fixed global array (`stageB_inmem`) | `dev_1M` | 320 MB (always) | 32 MB | | | n/a | |
+| Fixed global array (`stageB_inmem`) | `stress_full` | 320 MB (always) | 286 MB | | — | — | |
+| malloc, sized to file | `dev_1M` | | | | | | |
+| malloc, sized to file | `stress_full` | | | | — | — | |
+
+Memory used = `sizeof(Trade)` (32 B) × number of trades.
+
+---
+
+## 5. Per-member benchmark write-up (Testing & Enhancement 1) — TODO
+
+Brief: each member documents the full `stress_full.csv` benchmark on laptop and Pi, **one
+set per member**, including:
+- system set-up (Pi model, OS, compiler version, flags, CPU governor) — see table above;
+- **time and throughput (trades/s) for every version**;
+- **`perf stat`**: cycles, instructions, IPC, cache misses (Pi only — `perf` doesn't work
+  on the laptop);
+- **memory usage for each version**.
+
+(README assigns `perf stat` to Yong Sheng only; the brief requires it in every member's
+own write-up.)
+
+| Version | Laptop time | Laptop trades/s | Pi time | Pi trades/s | Pi cycles | Pi instructions | Pi IPC | Pi cache misses | Memory |
+|---|---|---|---|---|---|---|---|---|---|
+| Version 0 (TBD by group) | | | | | | | | | |
+| In-memory, double, naive SMA | | | | | | | | | |
+| In-memory, double, running SMA | | | | | | | | | |
+| In-memory, fixed-point | | | | | | | | | |
+| malloc version | | | | | | | | | |
 
 ---
 
@@ -355,4 +395,4 @@ My entries are written in `logs/stageb_predictions.md`.
       result was ~2.5×, not the ~24× the operation count suggests — good "explain" material)
 - [ ] Do naive and running-sum give the same signals? (They don't with `double` — rounding.)
 - [x] Fixed-point vs double speed (and whether results change) — Prediction 1 written; laptop results filled in, Pi + Reason TODO
-- [ ] malloc vs fixed array: memory saved, any speed difference
+- [ ] **Stage C** — malloc vs fixed array: memory saved, any speed difference (write before building; the group needs a Stage C entry)
