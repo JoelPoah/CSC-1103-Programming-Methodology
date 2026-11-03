@@ -14,6 +14,11 @@
  * Run (from the project root):
  *   ./stageB/stageB_inmem
  *
+ * Naive SMA version (for the SMA comparison): same build, plus
+ *   -DNAIVE_SMA stageB/engine/sma_naive.c  and  -o stageB/stageB_inmem_naive
+ * -DNAIVE_SMA tells the compiler to use the #ifdef NAIVE_SMA code below,
+ * so both versions come from one source file and differ ONLY in the SMA.
+ *
  * Expected: test20 table matches data/group_data/test20_expected.txt,
  *           dev_1M gives final VWAP 76217.01291587, 2465 BUY, 2464 SELL.
  */
@@ -23,6 +28,9 @@
 #include "engine/vwap.h"
 #include "engine/ohlc.h"
 #include "engine/sma.h"
+#ifdef NAIVE_SMA
+#include "engine/sma_naive.h"   /* only needed by the naive build */
+#endif
 #include "engine/signal.h"
 #include "engine/report.h"
 
@@ -78,12 +86,23 @@ static void process(long long n, int short_win, int long_win, int print_table) {
                       finished.close, finished.n);
         }
 
+#ifdef NAIVE_SMA
+        /* slow version: re-add the whole window every trade */
+        sma_naive_push(&short_sma, t->price);
+        sma_naive_push(&long_sma, t->price);
+        have_short = sma_ready(&short_sma);
+        have_long  = sma_ready(&long_sma);
+        if (have_short) short_value = sma_naive_value(&short_sma);
+        if (have_long)  long_value  = sma_naive_value(&long_sma);
+#else
+        /* fast version: running sum, one add + one subtract per trade */
         sma_push(&short_sma, t->price);
         sma_push(&long_sma, t->price);
         have_short = sma_ready(&short_sma);
         have_long  = sma_ready(&long_sma);
         if (have_short) short_value = sma_value(&short_sma);
         if (have_long)  long_value  = sma_value(&long_sma);
+#endif
 
         if (have_short && have_long) {
             signal = crossover_update(&cross, short_value, long_value);
@@ -138,6 +157,11 @@ static int run(const char *path, int short_win, int long_win, int print_table) {
 }
 
 int main(void) {
+#ifdef NAIVE_SMA
+    printf("SMA version: naive (re-add whole window)\n\n");
+#else
+    printf("SMA version: running sum\n\n");
+#endif
     printf("=== test20.csv (short=%d, long=%d) ===\n", TEST_SHORT, TEST_LONG);
     if (run(TEST20_PATH, TEST_SHORT, TEST_LONG, 1) != 0) return 1;
 
