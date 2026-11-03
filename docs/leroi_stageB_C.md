@@ -109,13 +109,27 @@ the shape of the result:_
 8.9M trades takes < 0.1 s (~10 ns per trade). This is the argument for (a) processing from
 memory and (b) Jaren's fast parser.
 
-**Official measurements — TODO** (stress_full, median of 5, pinned with `taskset`):
+**Official measurements** (stress_full, 8,928,944 trades, `-O2`, `taskset -c 2`, 5 runs,
+median; laptop measured 2026-11-03):
 
-| Version | Laptop time | Laptop ns/trade | Laptop trades/s | Pi time | Pi ns/trade | Pi trades/s | Speedup vs V0 (Pi) |
-|---|---|---|---|---|---|---|---|
-| Streaming (`stageB_manual`, reads file in loop) | | | | | | | |
-| In-memory, process phase only (`stageB_inmem`) | | | | | | | |
-| In-memory, load + process | | | | | | | |
+Streaming = `stageB/stageB_stream.c`: the same engine modules, reading with `next_trade()`
+while processing, with no `.dat` and no gnuplot. Joel's `stageB_manual` cannot be timed by
+the brief's rules, because it writes `signals.dat`, runs gnuplot and does not use `now_ns()`.
+
+| Version | Laptop 5 runs (ms, sorted) | Laptop median | ns/trade | trades/s | Speedup vs streaming | Pi median | Pi ns/trade | Pi trades/s | Speedup vs V0 (Pi) |
+|---|---|---|---|---|---|---|---|---|---|
+| Streaming (`stageB_stream`) | 2982.6, 2986.0, 2988.1, 3000.3, 3018.1 | **2988.1 ms** | 334.7 | 2.99 M | 1.00× | _TODO_ | | | _TODO (V0)_ |
+| In-memory, process phase only (`stageB_inmem`) | 77.7, 77.8, 79.0, 85.2, 87.7 | **79.0 ms** | 8.9 | 113.0 M | **37.8×** | _TODO_ | | | |
+| In-memory, load + process | 2954.9, 2956.5, 2976.8, 2988.4, 2990.0 | **2976.8 ms** | 333.4 | 3.00 M | **1.004×** | _TODO_ | | | |
+
+- Output is identical for both (stress_full: VWAP 76718.67569936, 20188 BUY / 20188 SELL).
+- Load + process is the median of the 5 per-run sums (load median alone: 2891.6 ms).
+- **What it shows:** processing from memory is about 38× faster than streaming, but only
+  because reading and parsing are moved outside the timed part. Load + process together
+  costs the same as streaming (0.4% difference, within run-to-run noise). In-memory pays
+  off only when the same data is processed more than once (e.g. the replay, or several
+  strategies on one load). Parsing is 97% of the work, which is why Jaren's fast parser is
+  the bigger win for a single pass.
 
 Memory: in-memory version uses a fixed **320 MB** array regardless of file size
 (286 MB actually filled for stress_full: 8,928,944 × 32 B).
@@ -322,11 +336,59 @@ on a modern CPU. The fixed-point runs were also more consistent (70.2–72.2 ms 
 - **Risk:** fixed-point silently breaks if the data changes (e.g. a coin with more
   decimals, or a much larger day's volume → overflow). Double never overflows here.
 
-## 4. malloc array vs fixed global array, with valgrind (Stage C task 1) — TODO
+## 4. malloc array vs fixed global array, with valgrind (Stage C task 1) — BUILT, measurements TODO
 
 Brief: _"Replace the fixed-size array with one allocated by malloc to fit the file, and
 compare memory use."_ Also a ladder rung: _"memory allocated with malloc to fit the data
 exactly."_
+
+### What was built (2026-11-03)
+- `stageC/engine/trades_malloc.h/.c`: `count_lines(path)` and
+  `load_trades_malloc(path, &n)`, which returns a `malloc`'d `Trade *` (the caller
+  calls `free`).
+- `stageC/stageC_malloc.c`: a copy of `stageB_inmem.c` (double, running-sum SMA). The
+  only change is that the array is a `malloc`'d pointer passed into `process()`, not the
+  global `trades[]`. It frees the array after each file. `./stageC/stageC_malloc dev`
+  skips stress_full, because valgrind is too slow for it.
+- **For Lucas (replay):** call `load_trades_malloc`, loop over `list[0..n-1]`, then
+  `free(list)`.
+
+Build (from project root):
+```sh
+gcc -O2 -Wall stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageB/engine/vwap.c \
+    stageB/engine/ohlc.c stageB/engine/sma.c stageB/engine/signal.c stageB/engine/report.c \
+    helper_function/trade_io.c -o stageC/stageC_malloc
+```
+
+**Design choices (to defend):**
+- **Count first, then `malloc` once.** The first pass counts lines with `fgets` and no
+  `sscanf`, so no numbers are converted. Then exactly `n × 32 B` is allocated and a second
+  pass fills it. This is simpler to explain than growing the array with `realloc`, and it
+  never over-allocates. The cost is reading the file twice. This was chosen before
+  measuring and matches the Prediction 2 design.
+- **Same `Trade` struct as Stage B**, included from `stageB/engine/trades.h`. The two
+  versions then differ only in where the array lives, so the comparison is fair.
+  `trades.c` is not linked, so the 320 MB global array does not exist in this program.
+- **Every error path frees what it allocated**, and the `NULL` check comes straight after
+  `malloc`. The fill loop still checks `n < capacity`, so it can never write past the
+  end, even if the line count were wrong.
+- **An empty file is rejected**, because `malloc(0)` may return `NULL` and would look like
+  an out-of-memory error.
+- `(size_t)capacity * sizeof(Trade)`: the multiplication is done in the type `malloc`
+  takes. (8.9M × 32 B is far from overflowing anyway.)
+
+**Correctness (laptop, 2026-11-03):**
+- Output is **identical** to `stageB_inmem` on all three files, apart from the timing
+  lines. test20 matches `test20_expected.txt`. dev_1M gives VWAP 76217.01291587,
+  2465 BUY / 2464 SELL.
+- **valgrind Memcheck** (`valgrind --leak-check=full --show-leak-kinds=all
+  ./stageC/stageC_malloc dev`, i.e. test20 + dev_1M): **0 errors**, "All heap blocks were
+  freed -- no leaks are possible". Heap usage: 11 allocs, 11 frees, 32,023,008 bytes in
+  total (the 32 MB dev_1M array plus small blocks for the helper's file handles).
+
+**Preliminary timings** (single run, not pinned; do not copy into the report):
+stress_full load 3005 ms (count + malloc + fill), process 85.6 ms. Stage B's earlier
+preliminary run gave load 2812 ms, process 86.1 ms.
 
 **Where valgrind fits:** the brief never names valgrind. It is the tool that produces the
 evidence for this comparison (and for "memory usage for each version" in the per-member
@@ -348,19 +410,56 @@ Things to explain in the report:
   from `malloc` may be smaller than "320 MB → exact size". Measure, don't assume.
 - Pi 5 has **4 GB** RAM — relevant for the "memory-limited edge device" recommendation.
 
-### Results — TODO
-| Version | File | Memory reserved | Memory used | Peak (Massif / max RSS) | Memcheck errors | Definitely lost | Process time |
-|---|---|---|---|---|---|---|---|
-| Fixed global array (`stageB_inmem`) | `dev_1M` | 320 MB (always) | 32 MB | | | n/a | |
-| Fixed global array (`stageB_inmem`) | `stress_full` | 320 MB (always) | 286 MB | | — | — | |
-| malloc, sized to file | `dev_1M` | | | | | | |
-| malloc, sized to file | `stress_full` | | | | — | — | |
+### Results: memory on the laptop (2026-11-03). Pi TODO
 
-Memory used = `sizeof(Trade)` (32 B) × number of trades.
+(No timing needed here: Stage C 1 asks only for memory use. The `stageC_malloc` time and
+throughput go in the per-member benchmark write-up, section 5.)
+
+"dev" = `./prog dev` (test20 + dev_1M). "stress" = `./prog` (all three files; the peak
+comes while stress_full is loaded). Both programs were built with `-O2 -Wall`. MB = 10⁶ bytes.
+
+| Version | Run | Array actually needed | Reserved (Massif `--pages-as-heap=yes` peak) | Heap-only Massif peak | Physical (max RSS, median of 5) | Memcheck errors | Definitely lost |
+|---|---|---|---|---|---|---|---|
+| Fixed global array (`stageB_inmem`) | dev | 32.0 MB | **325.0 MB** | 0.009 MB | **34.7 MB** | 0 | 0 B |
+| malloc, sized to file (`stageC_malloc`) | dev | 32.0 MB | **37.0 MB** | 32.0 MB | **34.0 MB** | 0 | 0 B |
+| Fixed global array (`stageB_inmem`) | stress | 285.7 MB | **325.0 MB** | — | **289.0 MB** | — | — |
+| malloc, sized to file (`stageC_malloc`) | stress | 285.7 MB | **290.7 MB** | — | **287.7 MB** | — | — |
+
+Array actually needed = `sizeof(Trade)` (32 B) × number of trades.
+
+**What it shows:**
+- **Reserved memory:** `malloc` saves **288 MB on dev_1M** (325.0 → 37.0 MB, −89%) and
+  **34 MB on stress_full** (325.0 → 290.7 MB, −11%). The fixed array reserves 320 MB
+  whatever the file size. `size stageB/stageB_inmem` shows `bss = 320,000,104` bytes,
+  against `bss = 80` for `stageC_malloc`.
+- **Physical memory is almost the same**, only about 0.7 MB (dev) and 1.3 MB (stress) less
+  with `malloc`. The OS only gives real memory to the pages of the global array that are written,
+  so the unused part of the fixed array costs reserved address space but no RAM.
+- **Plain valgrind (heap only) cannot see the global array.** For `stageB_inmem` its peak
+  is 8.7 kB, while `stageC_malloc` shows the 32 MB heap block. That is why
+  `--pages-as-heap=yes` is needed for a fair comparison.
+- **Memcheck is clean for both** (dev run, `--leak-check=full --show-leak-kinds=all`):
+  0 errors, "All heap blocks were freed". Fixed array: 5 allocs / 5 frees, 13,232 B (only
+  the helper's file buffers). malloc: 11 allocs / 11 frees, 32,023,008 B.
+
+**Method notes:**
+- Max RSS was read with `wait4()` (fork, exec, wait) through a tiny C wrapper. This is the
+  same counter that `/usr/bin/time -v` prints as "Maximum resident set size", but GNU
+  `time` is not installed on the laptop. On the Pi: `sudo apt install time`, then
+  `/usr/bin/time -v ./prog dev`.
+  - A first attempt used a Python wrapper, but it can never report less than ~9 MB (the
+    child is a copy of Python until `exec`). It gave the same numbers for the big versions
+    but 9 MB for streaming, which really uses 1.9 MB. All numbers here are from the C
+    wrapper.
+- Massif peak = the largest `mem_heap_B` in `massif.out` (or `ms_print massif.out.<pid>`).
+  With `--pages-as-heap=yes` it also counts the program code and libraries (~4–5 MB),
+  which is why the reserved figure is a little above the array size.
+- Massif and Memcheck are single runs, because they count bytes and give the same result
+  every time. Max RSS is the median of 5 runs.
 
 ---
 
-## 5. Per-member benchmark write-up (Testing & Enhancement 1) — TODO
+## 5. Per-member benchmark write-up (Testing & Enhancement 1) — laptop DONE (my versions), Pi TODO
 
 Brief: each member documents the full `stress_full.csv` benchmark on laptop and Pi, **one
 set per member**, including:
@@ -373,13 +472,66 @@ set per member**, including:
 (README assigns `perf stat` to Yong Sheng only; the brief requires it in every member's
 own write-up.)
 
-| Version | Laptop time | Laptop trades/s | Pi time | Pi trades/s | Pi cycles | Pi instructions | Pi IPC | Pi cache misses | Memory |
+### Laptop (2026-11-03): time and throughput
+
+stress_full (8,928,944 trades), `-O2 -Wall`, `taskset -c 2`, 5 runs back to back, one
+version after another, median. Total = load + process (the median of the per-run sums).
+trades/s = 8,928,944 ÷ time.
+
+| Version | Program | Total time | ns/trade | trades/s | Process phase | Process ns/trade | Process trades/s |
+|---|---|---|---|---|---|---|---|
+| Version 0 (TBD by group) | | | | | | | |
+| Streaming, double, running SMA | `stageB_stream` | 2988.1 ms | 334.7 | 2.99 M | — (mixed with reading) | — | — |
+| In-memory, double, naive SMA | `stageB_inmem_naive` | 3122.9 ms | 349.7 | 2.86 M | 202.6 ms | 22.7 | 44.1 M |
+| In-memory, double, running SMA | `stageB_inmem` | 2976.8 ms | 333.4 | 3.00 M | 79.0 ms | 8.9 | 113.0 M |
+| In-memory, fixed-point | `stageB_fixed` | 3007.4 ms | 336.8 | 2.97 M | 71.9 ms | 8.1 | 124.1 M |
+| malloc, double, running SMA | `stageC_malloc` | 3319.8 ms | 371.8 | 2.69 M | 85.3 ms | 9.6 | 104.6 M |
+
+- **`stageC_malloc` re-check:** it ran last and had a wide spread (total 3209–3573 ms), so
+  it was re-run 5 times, alternating with `stageB_inmem`:
+  - inmem: load 2988.7, process 80.9, total 3069.2 ms
+  - malloc: load 3218.7, process 81.0, total 3299.8 ms
+
+  The process phase is the same. Load is +230 ms (+7.7%), the cost of the extra counting
+  pass. The 85.3 ms above was noise from the running order.
+- Runs vary by 1–2% between sets (inmem process: 79.0 here, 80.9 in the re-check, 76.2 in
+  section 2), so differences below ~3% should be treated as noise.
+- Section 2's naive/running numbers (200.4 / 76.2 ms) came from an earlier set and agree
+  with these.
+
+### Laptop (2026-11-03): memory
+
+Reserved = Massif `--pages-as-heap=yes` peak (includes ~4–5 MB of code and libraries).
+Physical = max RSS, median of 5 (C wrapper, see section 4). Full run (peak while
+stress_full is loaded). MB = 10⁶ bytes.
+
+| Version | Program | `.bss` (from `size`) | Reserved | Physical (max RSS) |
+|---|---|---|---|---|
+| Streaming | `stageB_stream` | 80 B | 5.0 MB | 1.9 MB |
+| In-memory, naive SMA | `stageB_inmem_naive` | 320.0 MB | 325.0 MB | 288.5 MB |
+| In-memory, running SMA | `stageB_inmem` | 320.0 MB | 325.0 MB | 289.0 MB |
+| In-memory, fixed-point | `stageB_fixed` | 320.0 MB | 325.0 MB | 289.2 MB |
+| malloc | `stageC_malloc` | 80 B | 290.7 MB | 287.7 MB |
+
+- `stageB_fixed` uses the same 32-byte struct size (`long long` price/qty instead of
+  `double`), so its memory matches the double version.
+- Streaming uses about 150× less physical memory than any in-memory version. This matters
+  for the edge-device recommendation (Pi 5: 4 GB).
+
+### Pi 5: TODO
+
+| Version | Total time | trades/s | Process phase | cycles | instructions | IPC | cache misses | Reserved | Max RSS |
 |---|---|---|---|---|---|---|---|---|---|
 | Version 0 (TBD by group) | | | | | | | | | |
-| In-memory, double, naive SMA | | | | | | | | | |
-| In-memory, double, running SMA | | | | | | | | | |
-| In-memory, fixed-point | | | | | | | | | |
-| malloc version | | | | | | | | | |
+| `stageB_stream` | | | | | | | | | |
+| `stageB_inmem_naive` | | | | | | | | | |
+| `stageB_inmem` | | | | | | | | | |
+| `stageB_fixed` | | | | | | | | | |
+| `stageC_malloc` | | | | | | | | | |
+
+Still missing from "every version": teammates' versions (fast parser, compiler-flag builds,
+Version 0) once they exist, and `stageA_stream` / `stageB_manual`. Those two cannot be timed
+as they are, because they write `.dat` files, run gnuplot and do not use `now_ns()`.
 
 ---
 
@@ -388,11 +540,10 @@ own write-up.)
 Brief: ≥ 6 group entries, at least one per stage, each dated and signed. Write the
 prediction **before** running.
 
-My entries are written in `logs/stageb_predictions.md`.
+My entries are written in `logs/leroi_predictions.md`.
 
-- [ ] In-memory: "process phase will be X× faster than streaming because…"
-- [ ] Naive vs running-sum SMA speedup (predict before the official runs; preliminary
-      result was ~2.5×, not the ~24× the operation count suggests — good "explain" material)
-- [ ] Do naive and running-sum give the same signals? (They don't with `double` — rounding.)
+- [x] In-memory vs streaming: Prediction 3 written 2026-11-03 (before official runs); laptop results filled in, Pi + Reason TODO
+- [x] Naive vs running-sum SMA: Prediction 4 written 2026-11-03. It covers the Pi only, because the laptop result (2.63×) was already measured. Pi + Reason TODO
+- [x] ~~Do naive and running-sum give the same signals?~~ Already observed before a prediction could be written (they don't), so it is recorded under "Findings" instead. Replaced by Prediction 5: do the laptop and the Pi give the same answers? Pi + Reason TODO
 - [x] Fixed-point vs double speed (and whether results change) — Prediction 1 written; laptop results filled in, Pi + Reason TODO
-- [ ] **Stage C** — malloc vs fixed array: memory saved, any speed difference (write before building; the group needs a Stage C entry)
+- [x] **Stage C** — malloc vs fixed array: memory saved, any speed difference — Prediction 2 written 2026-11-03 (before building); Result + Reason TODO
