@@ -216,27 +216,109 @@ difference.
 
 ---
 
-## 3. Fixed-point prices vs double (Stage B task 3) — TODO
+## 3. Fixed-point prices vs double (Stage B task 3) — DONE on laptop, Pi timing TODO
 
 Brief: _"Store prices as fixed-point integers (long long) instead of double, and compare."_
 Also: _"Check that price × qty cannot overflow long long (~9.2 × 10¹⁸), and explain your
 choice in the report."_
 
-To record:
-- Chosen scale factors (price ×?, qty ×?) and why they fit the data
-  (price ~76,000 with 2 decimals; qty with 8 decimals).
-- Overflow working: single price × qty product, SMA window sum (max price × scale × 60),
-  and the **VWAP running sum of price × qty over the whole day**.
-- Precision: difference between fixed-point and double results (VWAP, SMA, signal counts).
+**Files:** `stageB/engine/fixed.h` (scales + overflow working), `trades_fx.h/.c`,
+`vwap_fx.h/.c`, `ohlc_fx.h/.c`, `sma_fx.h/.c`, `signal_fx.h/.c`, and the program
+`stageB/stageB_fixed.c`. Reuses the shared `report.c` (printing) and `signal.c`
+(`signal_name`) unchanged.
 
-| Version | Laptop process time | Pi process time | ns/trade (Pi) | Speedup | Final VWAP | BUY/SELL |
-|---|---|---|---|---|---|---|
-| double | | | | 1.0× | 76718.67569936 | 20188 / 20188 |
-| fixed-point | | | | | | |
+Build:
+```sh
+gcc -O2 -Wall stageB/stageB_fixed.c stageB/engine/trades_fx.c stageB/engine/vwap_fx.c \
+    stageB/engine/ohlc_fx.c stageB/engine/sma_fx.c stageB/engine/signal_fx.c \
+    stageB/engine/signal.c stageB/engine/report.c helper_function/trade_io.c \
+    -o stageB/stageB_fixed
+```
 
-Trade-off discussion for report: speed vs precision vs readability.
+### What
+- `TradeFx` struct: `time`, `price`, `qty` all `long long`, plus `is_buy` — still 32 bytes.
+- Loader converts each double from the helper library **once** with
+  `to_fixed(value, scale) = (long long)(value × scale + 0.5)`.
+- The whole processing loop (VWAP sums, OHLC, SMA running sum, crossover) uses only
+  whole-number maths. Doubles appear **only when printing**.
+- Crossover compares `sum_short × L − sum_long × S` instead of `SMA_short − SMA_long`:
+  same sign (multiplied both sides by S × L > 0), but **no division and exact**.
 
----
+### Choice of scale factors (measured on `stress_full.csv`)
+| Field | Decimals in data | Range | Scale | Stored as |
+|---|---|---|---|---|
+| price | at most 2 | 73,027.02 – 79,500.00 | ×100 (cents) | 7,302,702 – 7,950,000 |
+| qty | at most 5 | up to 18.29992 | ×100,000 | up to 1,829,992 |
+
+Both scales store **every value exactly** (no information lost). The file shows 8 decimals
+for qty but the last 3 are always 0 (Binance's step size is 0.00001 BTC).
+
+### Overflow working (long long max ≈ 9.22 × 10¹⁸)
+| Quantity | Worst case | Fits? |
+|---|---|---|
+| one price × qty | 7.95×10⁶ × 1.83×10⁶ = 1.5×10¹³ | yes |
+| VWAP Σ(price × qty) over full day | 3.40×10⁹ USDT × 100 × 10⁵ = **3.4×10¹⁶** (measured: 3.402×10¹⁶) | yes, ~270× headroom |
+| VWAP Σ qty over full day | ~44,600 BTC × 10⁵ = 4.5×10⁹ | yes |
+| SMA window sum (60 prices) | 60 × 7.95×10⁶ = 4.8×10⁸ | yes |
+| crossover `sum × window` | 4.8×10⁸ × 60 = 2.9×10¹⁰ | yes |
+
+**Why not ×10⁸ for qty (all 8 printed decimals)?** The day's VWAP sum would be
+3.40×10⁹ × 100 × 10⁸ = **3.4×10¹⁹ → overflows**. ×10⁵ is the largest scale that is both
+exact for this data and safe. (The brief's own example warns about exactly this.)
+
+### Correctness / precision
+| Check | double (`stageB_inmem`) | fixed-point (`stageB_fixed`) | Exact answer |
+|---|---|---|---|
+| `test20.csv` rows + OHLC | match | **match** | — |
+| `dev_1M` final VWAP | 76217.01291587 | **76217.01291611** | 76217.01291611 |
+| `dev_1M` signals | 2465 BUY / 2464 SELL | **2553 BUY / 2469 SELL** | 2553 / 2469 |
+| `stress_full` final VWAP | 76718.67569936 | **76718.67569889** | 76718.67569889 |
+| `stress_full` signals | 20188 BUY / 20188 SELL | **20943 BUY / 20060 SELL** | 20943 / 20060 |
+
+- Exact VWAP computed independently with Python `Decimal` (40-digit precision); exact
+  signal counts from the earlier integer-cents check (section 2).
+- **Fixed-point matches the exact answer everywhere; double does not.** The double VWAP is
+  off by 2.4×10⁻⁷ (dev_1M) and 4.7×10⁻⁷ (stress_full) USDT — tiny, but it comes from
+  rounding error building up over millions of additions.
+- The big difference is the **signals**: on the ~1.7% of trades where both SMAs are
+  exactly equal, double's rounding gives a random-sign tiny `d`, creating/hiding signals.
+  Whole numbers give `d = 0` exactly, so the brief's `≤ 0` / `> 0` rule is applied as
+  written.
+
+### Comparison: speed
+
+`stress_full.csv` (8,928,944 trades), **process phase only**, `-O2`, `taskset -c 2`,
+5 runs, median. Both runs taken back to back.
+
+**Laptop:**
+
+| Version | 5 runs (ms, sorted) | Median | ns/trade | Trades/s | Speedup |
+|---|---|---|---|---|---|
+| double (`stageB_inmem`) | 76.0, 77.9, 79.9, 80.5, 88.7 | **79.9 ms** | 8.9 | 111.8 M | 1.0× |
+| fixed-point (`stageB_fixed`) | 70.2, 70.5, 70.6, 70.7, 72.2 | **70.6 ms** | 7.9 | 126.5 M | **1.13×** |
+
+**Pi 5 — TODO** (same method):
+
+| Version | 5 runs (ms, sorted) | Median | ns/trade | Trades/s | Speedup |
+|---|---|---|---|---|---|
+| double | | | | | 1.0× |
+| fixed-point | | | | | |
+
+Why only ~1.13×: the work per trade is the same (same steps, same 32-byte struct, so the
+same memory traffic); integer add/compare is only slightly cheaper than double add/compare
+on a modern CPU. The fixed-point runs were also more consistent (70.2–72.2 ms vs
+76.0–88.7 ms). Memory: `TradeFx` is 32 bytes like `Trade`, so no memory difference.
+
+### Trade-offs (for the report)
+- **Precision:** fixed-point is exact for this data (prices and quantities have a fixed
+  number of decimals); double gives slightly wrong VWAP and noticeably different signal
+  counts.
+- **Speed:** small gain (~13% on laptop).
+- **Readability / effort:** more code (separate `_fx` modules), units to keep track of
+  (cents, ×10⁵), scales must be chosen from the data and checked for overflow, and values
+  must be converted back for printing. Double is simpler to write and read.
+- **Risk:** fixed-point silently breaks if the data changes (e.g. a coin with more
+  decimals, or a much larger day's volume → overflow). Double never overflows here.
 
 ## 4. Memory profiling with valgrind (Stage B task 4) — TODO
 
@@ -272,5 +354,5 @@ My entries are written in `logs/stageb_predictions.md`.
 - [ ] Naive vs running-sum SMA speedup (predict before the official runs; preliminary
       result was ~2.5×, not the ~24× the operation count suggests — good "explain" material)
 - [ ] Do naive and running-sum give the same signals? (They don't with `double` — rounding.)
-- [x] Fixed-point vs double speed (and whether results change) — Prediction 1 written, results TODO
+- [x] Fixed-point vs double speed (and whether results change) — Prediction 1 written; laptop results filled in, Pi + Reason TODO
 - [ ] malloc vs fixed array: memory saved, any speed difference
