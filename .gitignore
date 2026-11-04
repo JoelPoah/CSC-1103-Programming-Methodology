@@ -24,6 +24,7 @@ stage0/question_b/recursion_sum_O2
 stage0/question_b/recursion_sum_O3
 helper_function/test_helpers
 stageA/stageA_stream
+benchmark/benchmark
 
 # Generated data dumps and temporary artifacts
 *.dat

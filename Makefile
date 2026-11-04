@@ -3,6 +3,7 @@
 #   make            build everything (stage0 + stageA)
 #   make stage0     build stage0 only (question a + question b)
 #   make stageA     build stageA only
+#   make benchmark  build the -O0..-O3 benchmark tool (benchmark/benchmark.c)
 #   make clean      delete all built executables
 #
 # Works with GNU make on Windows (MinGW gcc adds .exe automatically), Linux and macOS.
@@ -29,12 +30,15 @@ STAGE0_B = $(foreach p,loop_sum recursion_sum,$(foreach o,$(OPT_LEVELS),stage0/q
 # ---- stageA ----
 STAGEA = stageA/stageA_stream$(EXE)
 
+# ---- benchmark ----
+BENCHMARK = benchmark/benchmark$(EXE)
+
 # helper headers used by the stage0 programs
 HELPERS = helper_function/timing.h helper_function/led.h
 
-ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA)
+ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(BENCHMARK)
 
-.PHONY: all stage0 stageA clean
+.PHONY: all stage0 stageA benchmark clean
 
 all: stage0 stageA
 
@@ -56,6 +60,12 @@ $(foreach lvl,$(OPT_LEVELS),$(eval $(call QB_RULE,$(lvl))))
 # stageA: gcc -O2 -Wall stageA/stageA_stream.c helper_function/trade_io.c -o stageA/stageA_stream
 $(STAGEA): stageA/stageA_stream.c helper_function/trade_io.c helper_function/trade_io.h $(HELPERS)
 	$(CC) -O2 -Wall stageA/stageA_stream.c helper_function/trade_io.c -o $@
+
+benchmark: $(BENCHMARK)
+
+# benchmark: gcc -O2 -Wall benchmark/benchmark.c -o benchmark/benchmark
+$(BENCHMARK): benchmark/benchmark.c helper_function/timing.h
+	$(CC) -O2 -Wall benchmark/benchmark.c -o $@
 
 clean:
 ifeq ($(OS),Windows_NT)
