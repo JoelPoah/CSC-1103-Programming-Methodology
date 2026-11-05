@@ -1,8 +1,10 @@
 /*
  * stageA_manual.c - Stage A written by hand, using the engine modules
  *
- * This is a guided skeleton. Each TODO tells you WHAT to do and in WHICH
- * order; you write the actual C code yourself.
+ * This is the group's VERSION 0: helper library (sscanf), double prices and
+ * the NAIVE SMA in engine/sma.c (re-adds the whole window every trade).
+ * Every ladder speedup, the rival bot and the race compare against it.
+ * The running-sum SMA rung is stageA_running_sma.c.
  *
  * Build (from the project root):
  *   gcc -O2 -Wall stageA/stageA_manual.c stageA/engine/vwap.c stageA/engine/ohlc.c
@@ -13,8 +15,11 @@
  *
  * Check your answers against:
  *   data/group_data/test20_expected.txt  (table + signals for short=3, long=5)
- *   the dev_1M numbers from the old program: final VWAP 76217.01291587,
- *   2465 BUY, 2464 SELL (short=35, long=60)
+ *   the dev_1M numbers (short=35, long=60), final VWAP 76217.01291587:
+ *     engine/sma.c (naive, Version 0)        -> 2509 BUY, 2469 SELL
+ *     engine/running_sma.c (running sum)     -> 2465 BUY, 2464 SELL
+ *   (they differ because the running sum drifts by tiny rounding errors, so
+ *    flat stretches where short SMA == long SMA no longer give d = 0 exactly)
  */
 #include <stdio.h>
 #include <stdlib.h>

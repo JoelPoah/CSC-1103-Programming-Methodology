@@ -1,8 +1,10 @@
 /*
  * sma.h - simple moving average over the last N prices
  *
- * Uses an array as a circular window and a running sum, so each new price
- * costs O(1). There are two windows, picked by an id: SHORT_SMA or LONG_SMA.
+ * NAIVE version (Version 0): the array is a circular window of the last N
+ * prices, and every call to sma_value re-adds the whole window, so each
+ * trade costs O(N). The fast running-sum version is running_sma.h / .c.
+ * There are two windows, picked by an id: SHORT_SMA or LONG_SMA.
  * The arrays live inside sma.c, so no structs or pointers are needed.
  */
 #ifndef SMA_H
