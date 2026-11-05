@@ -1,5 +1,6 @@
 /*
- * sma.c - simple moving average (see sma.h)
+ * sma.c - naive simple moving average (see sma.h)
+ * Re-adds the whole window on every sma_value call: O(N) per trade.
  */
 #include "sma.h"
 #include <stdio.h>
@@ -9,7 +10,6 @@ static double win[SMA_COUNT][MAX_WIN];   /* circular array of the most recent pr
 static int    window[SMA_COUNT];         /* N: how many prices the average covers     */
 static int    head[SMA_COUNT];           /* next slot to overwrite                    */
 static int    count[SMA_COUNT];          /* prices seen so far, capped at window      */
-static double sum[SMA_COUNT];            /* sum of the prices currently in the array  */
 
 /* sma_init
  * What:    empty window with the given size
@@ -19,7 +19,6 @@ static double sum[SMA_COUNT];            /* sum of the prices currently in the a
 void sma_init(int id, int size) {
     head[id] = 0;
     count[id] = 0;
-    sum[id] = 0.0;
     if (size < 1 || size > MAX_WIN){
         printf("SMA INIT FAILED: window size out of bounds\n");
         window[id] = 1;
@@ -29,19 +28,14 @@ void sma_init(int id, int size) {
 }
 
 /* sma_push
- * What:    add a price; once the window is full, drop the oldest one
+ * What:    add a price; once the window is full, it overwrites the oldest one
  * In/Out:  id = which window, price = new price. Returns nothing.
- * Steps:   1) if count == window, subtract win[head] from sum (that is the oldest)
- *          2) win[head] = price, sum += price
- *          3) head = (head + 1) % window
- *          4) if count < window, count++
+ * Steps:   1) win[head] = price (no running sum is kept)
+ *          2) head = (head + 1) % window
+ *          3) if count < window, count++
  */
 void sma_push(int id, double price) {
-    if (count[id] == window[id]){
-        sum[id] -= win[id][head[id]];
-    }
     win[id][head[id]] = price;
-    sum[id] += price;
     head[id] = (head[id] + 1) % window[id]; // if head+1 is window. After mod, index 0
     if (count[id] < window[id]){
         count[id]++;
@@ -60,14 +54,18 @@ int sma_ready(int id) {
 }
 
 /* sma_value
- * What:    the average of the prices in the window = sum / window
+ * What:    the average of the prices in the window, re-adding all N of them
  * In/Out:  id = which window. Returns the average.
+ * Cost:    N additions on every call -> the slow part we measure on the ladder
  * Watch:   only meaningful when sma_ready is 1; the caller decides what to print before that
  */
 double sma_value(int id) {
     if (sma_ready(id)){
-        double average = sum[id] / window[id];
-        return average;
+        double total = 0.0;
+        for (int i = 0; i < window[id]; i++){
+            total += win[id][i];   /* order doesn't matter for a sum */
+        }
+        return total / window[id];
     }
     return 0.0;
 }
