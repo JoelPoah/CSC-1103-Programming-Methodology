@@ -38,3 +38,7 @@ stageC/*
 *.log
 *.zip
 vgcore.*
+
+# Personal scratch work and local data (not for the group repo)
+codespace/
+data/
