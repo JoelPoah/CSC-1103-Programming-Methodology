@@ -10,6 +10,8 @@
  *       helper_function/trade_io.c -o stageA/stageA_manual
  * Run (from the project root):
  *   ./stageA/stageA_manual
+ * Or from inside stageA:
+ *   ./stageA_manual
  *
  * Check your answers against:
  *   data/group_data/test20_expected.txt  (table + signals for short=3, long=5)
@@ -18,6 +20,13 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef _WIN32
+#include <direct.h>
+#define change_directory _chdir
+#else
+#include <unistd.h>
+#define change_directory chdir
+#endif
 #include "../helper_function/trade_io.h"
 #include "engine/vwap.h"
 #include "engine/ohlc.h"
@@ -40,6 +49,28 @@
 /* ---- slice written to signals.dat ---- */
 #define SLICE_START 1
 #define SLICE_LEN   2000
+
+/* Keep input, output and gnuplot paths relative to the project root.
+ * If launched inside stageA, move this process to its parent folder.
+ * This does not change the working directory of the user's terminal.
+ */
+static int set_project_directory(void) {
+    FILE *check = fopen(TEST20_PATH, "r");
+    if (check != NULL) {
+        fclose(check);
+        return 1;
+    }
+    check = fopen("../" TEST20_PATH, "r");
+    if (check != NULL) {
+        fclose(check);
+        if (change_directory("..") == 0) return 1;
+        perror("Cannot switch to the project root");
+        return 0;
+    }
+    fprintf(stderr, "Cannot find %s. Run from the project root or stageA folder.\n",
+            TEST20_PATH);
+    return 0;
+}
 
 /*
  * run - process one whole trade file
@@ -202,6 +233,8 @@ static int run(const char *path, int short_win, int long_win, int print_table,
 }
 
 int main(void) {
+    if (!set_project_directory()) return 1;
+
     /* PART A - correctness check on the 20-trade file
      * Hint: call run(...) with TEST20_PATH, TEST_SHORT, TEST_LONG, print_table=1,
      * no slice (0, 0) and no .dat file (NULL).
