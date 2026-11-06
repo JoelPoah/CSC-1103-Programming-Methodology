@@ -1,3 +1,4 @@
+WINDOWS:
 [gcc -O0 .\loop_sum.c -o loop_sum_O0] //default 
 sum: 50005000
 Time taken: 15400 ns, 19300 ns, 12100 ns, 13400 ns, 17100 ns // average: 15,460 ns
@@ -26,7 +27,7 @@ Time taken: 280900 ns ,284700 ns, 297700 ns, 288800 ns, 293200 ns // average: 28
 [LED GREEN ON]
 sum: 50005000
 [LED GREEN OFF]
-Time taken: 228200 ns, 230700 ns, 268500 ns, 212000 ns, 208800 ns // average: 229,840 ns
+Time taken: 228200 ns, 230700 ns, 268500 ns, 212000 ns, 208800 ns // average: 229,640 ns
 
 [gcc -O2 .\recursion_sum.c -o recursion_sum_O2]
 [led.h] No built-in LED on this computer. Printing instead.
@@ -41,3 +42,55 @@ Time taken: 13600 ns, 55300 ns,  14500 ns,  43900 ns, 27600 ns // average: 30,98
 sum: 50005000
 [LED GREEN OFF]
 Time taken: 12900 ns, 74800 ns, 14900 ns, 42900 ns, 42400 ns //average: 37,580 ns
+
+
+RASPBERRY PI:
+[gcc -O0 .\loop_sum.c -o loop_sum_O0] //default 
+sum: 50005000
+Time taken: 42944 ns, 43017 ns, 42796 ns, 42980 ns, 42777 ns // average: 42,902 ns
+
+[gcc -O1 .\loop_sum.c -o loop_sum_O1]
+sum: 50005000
+Time taken: 6777 ns, 6777 ns, 6759 ns, 6759 ns, 6778 ns // average: 6,770 ns
+
+[gcc -O2 .\loop_sum.c -o loop_sum_O2]
+sum: 50005000
+Time taken: 92 ns, 92ns, 74ns, 74ns, 74ns //average: 81ns
+
+[gcc -O3 .\loop_sum.c -o loop_sum_O3]
+sum: 50005000
+Time taken: 93 ns, 74ns, 93 ns, 74 ns, 74 ns //average: 81ns
+
+[gcc -O0 .\recursion_sum.c -o recursion_sum_O0] //default
+[led.h] No built-in LED on this computer. Printing instead.
+[LED GREEN ON]
+sum: 50005000
+[LED GREEN OFF]
+Time taken: 112351 ns, 111498 ns, 112517 ns, 120535 ns, 114739 ns // average: 114,328 ns
+
+[gcc -O1 .\recursion_sum.c -o recursion_sum_O1]
+[led.h] No built-in LED on this computer. Printing instead.
+[LED GREEN ON]
+sum: 50005000
+[LED GREEN OFF]
+Time taken: 89684 ns, 126646 ns,  101332 ns,  90869 ns, 82907 ns // average: 98,287 ns
+
+[gcc -O2 .\recursion_sum.c -o recursion_sum_O2]
+[led.h] No built-in LED on this computer. Printing instead.
+[LED GREEN ON]
+sum: 50005000
+[LED GREEN OFF]
+Time taken: 1611 ns, 1556 ns,  1648 ns,  2389 ns, 2389 ns // average: 1,918 ns
+
+[gcc -O3 .\recursion_sum.c -o recursion_sum_O3]
+[led.h] No built-in LED on this computer. Printing instead.
+[LED GREEN ON]
+sum: 50005000
+[LED GREEN OFF]
+Time taken: 1463 ns, 7703 ns, 2148 ns, 7667 ns, 2129 ns //average: 4,222 ns
+
+
+FINDINGS:
+1. Higher optimisation levels gave big speedups, mostly from -O0 to -O2. -O3 added nothing, and at -O2/-O3 the loop was essentially optimised away, so those numbers are below the timer’s resolution.
+2. Recursion was always slower than the loop because of function-call overhead, until -O2 partly converted it into a loop.
+3. Windows was about 2.8× faster for the loop but slower for recursion, so performance depends on the architecture, calling convention, and compiler, not just CPU speed.

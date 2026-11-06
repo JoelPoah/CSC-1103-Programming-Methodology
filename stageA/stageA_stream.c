@@ -1,5 +1,9 @@
 /*
- * stageA_stream.c - Stage A: baseline streaming engine
+ * stageA_stream.c - Stage A: original single-file streaming engine
+ *
+ * Kept for reference. Version 0 is stageA_manual.c (same output, split into
+ * engine/ modules). Like Version 0 it uses the helper library (sscanf),
+ * double prices and a NAIVE SMA that re-adds the whole window every trade.
  *
  * One pass over a trade file, one trade at a time, computing:
  *   1) running VWAP            (two running sums)
@@ -19,7 +23,7 @@
 #include "../helper_function/trade_io.h"
 
 /* ---- hardcoded paths (relative to the project root) ---- */
-#define TEST20_PATH   "data/group_data/test20.csv"
+#define TEST20_PATH   "data/group_data/test20.csv" //hardcoded path of test 20 
 #define DEV_PATH      "data/group_data/dev_1M.csv"
 #define SIGNALS_DAT   "stageA/signals.dat"
 #define PLOT_SCRIPT   "stageA/plot_signals.gnuplot"
@@ -56,9 +60,8 @@ static int run(const char *path, int S, int L, int table,
     double o = 0, h = 0, lo = 0, c = 0;
     int bar_n = 0;
 
-    /* 3) SMA: circular windows with running sums */
+    /* 3) SMA: circular windows, summed from scratch every trade (naive) */
     double win_s[MAX_WIN], win_l[MAX_WIN];
-    double sum_s = 0.0, sum_l = 0.0;
 
     /* 4) signals */
     int have_prev = 0;
@@ -113,19 +116,21 @@ static int run(const char *path, int S, int L, int table,
             bar_n++;
         }
 
-        /* 3) SMA: overwrite the oldest slot, keep the sums up to date */
-        {
-            int is = (int)((i - 1) % S);
-            int il = (int)((i - 1) % L);
-            if (i > S) sum_s -= win_s[is];
-            if (i > L) sum_l -= win_l[il];
-            win_s[is] = p;  sum_s += p;
-            win_l[il] = p;  sum_l += p;
-        }
+        /* 3) SMA: overwrite the oldest slot, then re-add the whole window */
+        win_s[(i - 1) % S] = p;
+        win_l[(i - 1) % L] = p;
         have_s = (i >= S);
         have_l = (i >= L);
-        if (have_s) sma_s = sum_s / S;
-        if (have_l) sma_l = sum_l / L;
+        if (have_s) {
+            double total = 0.0;
+            for (int j = 0; j < S; j++) total += win_s[j];   /* S additions */
+            sma_s = total / S;
+        }
+        if (have_l) {
+            double total = 0.0;
+            for (int j = 0; j < L; j++) total += win_l[j];   /* L additions */
+            sma_l = total / L;
+        }
 
         /* 4) crossover signal: needs both SMAs on two trades in a row */
         if (have_s && have_l) {

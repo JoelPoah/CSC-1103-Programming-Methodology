@@ -2,7 +2,7 @@
 #
 #   make            build everything (stage0 + stageA)
 #   make stage0     build stage0 only (question a + question b)
-#   make stageA     build stageA only
+#   make stageA     build stageA only (stageA_manual = Version 0, stageA_running_sma, stageA_stream)
 #   make clean      delete all built executables
 #
 # Works with GNU make on Windows (MinGW gcc adds .exe automatically), Linux and macOS.
@@ -27,7 +27,18 @@ OPT_LEVELS = O0 O1 O2 O3
 STAGE0_B = $(foreach p,loop_sum recursion_sum,$(foreach o,$(OPT_LEVELS),stage0/question_b/$(p)_$(o)$(EXE)))
 
 # ---- stageA ----
-STAGEA = stageA/stageA_stream$(EXE)
+# stageA_manual      = Version 0 (engine modules + naive sma.c)
+# stageA_running_sma = same program with running_sma.c (ladder rung)
+# stageA_stream      = original single-file version (reference)
+STAGEA_V0      = stageA/stageA_manual$(EXE)
+STAGEA_RUNNING = stageA/stageA_running_sma$(EXE)
+STAGEA_STREAM  = stageA/stageA_stream$(EXE)
+STAGEA = $(STAGEA_V0) $(STAGEA_RUNNING) $(STAGEA_STREAM)
+
+# engine modules shared by stageA_manual and stageA_running_sma (SMA file added per target)
+ENGINE_A   = stageA/engine/vwap.c stageA/engine/ohlc.c stageA/engine/signal.c stageA/engine/report.c
+ENGINE_A_H = stageA/engine/vwap.h stageA/engine/ohlc.h stageA/engine/signal.h stageA/engine/report.h
+TRADE_IO   = helper_function/trade_io.c helper_function/trade_io.h
 
 # helper headers used by the stage0 programs
 HELPERS = helper_function/timing.h helper_function/led.h
@@ -53,8 +64,16 @@ stage0/question_b/%_$(1)$(EXE): stage0/question_b/%.c $(HELPERS)
 endef
 $(foreach lvl,$(OPT_LEVELS),$(eval $(call QB_RULE,$(lvl))))
 
-# stageA: gcc -O2 -Wall stageA/stageA_stream.c helper_function/trade_io.c -o stageA/stageA_stream
-$(STAGEA): stageA/stageA_stream.c helper_function/trade_io.c helper_function/trade_io.h $(HELPERS)
+# stageA Version 0: stageA_manual.c + engine modules + naive sma.c
+$(STAGEA_V0): stageA/stageA_manual.c stageA/engine/sma.c stageA/engine/sma.h $(ENGINE_A) $(ENGINE_A_H) $(TRADE_IO)
+	$(CC) -O2 -Wall stageA/stageA_manual.c $(ENGINE_A) stageA/engine/sma.c helper_function/trade_io.c -o $@
+
+# stageA running-sum rung: same modules but running_sma.c instead of sma.c
+$(STAGEA_RUNNING): stageA/stageA_running_sma.c stageA/engine/running_sma.c stageA/engine/running_sma.h $(ENGINE_A) $(ENGINE_A_H) $(TRADE_IO)
+	$(CC) -O2 -Wall stageA/stageA_running_sma.c $(ENGINE_A) stageA/engine/running_sma.c helper_function/trade_io.c -o $@
+
+# stageA reference: gcc -O2 -Wall stageA/stageA_stream.c helper_function/trade_io.c -o stageA/stageA_stream
+$(STAGEA_STREAM): stageA/stageA_stream.c $(TRADE_IO)
 	$(CC) -O2 -Wall stageA/stageA_stream.c helper_function/trade_io.c -o $@
 
 clean:
