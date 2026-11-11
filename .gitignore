@@ -8,9 +8,13 @@ data/**/*.csv
 # Build outputs - Windows executables (gcc adds .exe)
 *.exe
 
-# Build outputs - executables and object files on Linux / Mac (names from Makefile)
+# Build outputs - every ladder version is built into bin/
+bin/*
+!bin/.gitkeep
 *.o
 *.out
+
+# Build outputs - stage0 executables on Linux / Mac (names from Makefile)
 stage0/question_a/a_loop_sum
 stage0/question_b/loop_sum
 stage0/question_b/recursion_sum
@@ -23,11 +27,11 @@ stage0/question_b/recursion_sum_O1
 stage0/question_b/recursion_sum_O2
 stage0/question_b/recursion_sum_O3
 helper_function/test_helpers
-stageA/stageA_stream
-stageA/stageA_running_sma
-stageA/stageA_manual
 
 # Generated data dumps and temporary artifacts
+# (results/report.md, results/logs/ and the .png graphs are NOT ignored:
+#  commit the ones measured on the Pi, they go in the hand-in zip.
+#  signals.dat and ladder.dat are ignored here, so copy them into the zip by hand.)
 *.dat
 *.log
 *.zip
