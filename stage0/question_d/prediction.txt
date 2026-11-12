@@ -1,17 +1,20 @@
 Prediction 1: Higher optimisation level = faster
 
-Expected: the different O increment would makes it run faster. significant difference appear from O0 to O2
+Expected: We thought each step up in optimisation level would make the program run faster, with the biggest jump showing up between O0 and O2.
 
-Result: it ran faster on O2 than O0, on both Windows and the Pi (e.g. Pi loop 42,902 ns → 81 ns, Pi recursion 114,328 ns → 1,918 ns). However, O3 was not faster than O2 on either platform.
+Result: O2 was much faster than O0 on both the laptop and the Pi (laptop loop 9,620 ns → 60 ns, laptop recursion 529,560 ns → 20 ns, Pi loop 42,781 ns → 81 ns, Pi recursion 111,487 ns → 92 ns).
 
-Reason: The opimisation of the compiler allows the to skip/streamline the instructions.
-such as keeping the variables in CPU registers. constantly checking i <= n
-can be changed to be more efficient, .etc. O3’s extra optimisations don’t help code this simple. The same pattern on both platforms shows the effect comes from the compiler, not the hardware.
+O1 was more mixed than we expected. It sped up the loop (1.70x on the laptop, 6.32x on the Pi) but did very little for recursion (1.23x on the Pi). On the laptop, the O1 recursion average actually came out slower than O0, but those runs varied a lot, so we don't trust that number much. O3 was no faster than O2 on either machine, which we didn't predict.
+
+Reason: With optimisation on, the compiler can cut out or simplify instructions, for example by keeping variables in CPU registers instead of reading and writing them in memory every time. That explains why the loop improves at O1. Recursion doesn't improve much at O1 because it still makes 10,000 real function calls, and the calls are the expensive part.
+
+The huge drop at O2 is a different effect. Since n = 10000 is fixed in our code, the compiler works out the answer (50005000) while compiling, and the program just prints it. So the times under 100 ns aren't really measuring our code at all, only the smallest step the timer can show. This also explains O3: there is no work left for it to remove. We saw the same pattern on both machines, which tells us it comes from the compiler and not the hardware.
 
 
-Prediction 2: Windows faster for loop, Pi faster for recursion
+Prediction 2: Laptop faster for the loop, Pi faster for recursion
 
-Expected: Windows would run the loop faster, while the Pi would run the recursion faster.
-Result: The prediction held. Windows was about 2.8× faster for the loop, while the Pi was faster for recursion at every level (2.5× at O0, 16× at O2).
+Expected: We predicted the laptop would win on the loop and the Pi would win on recursion.
 
-Reason: The loop depends mainly on raw CPU speed, where Windows has the faster processor. Recursion depends on function-call cost, which is cheaper on ARM because it stores the return address in a register instead of on the stack like Windows x64.
+Result: This held at O0 and O1. The laptop ran the loop faster (4.4x at O0, 1.2x at O1), and the Pi ran the recursion faster (4.7x at O0, 7.6x at O1). At O2 and O3 we can't compare them, because both versions are worked out at compile time and the times (20–92 ns) are only timer steps.
+
+Reason: The loop is mostly a test of raw CPU speed, and the laptop has the faster processor. Recursion is more about how much each function call costs. Our best guess is that calls are cheaper on the Pi: ARM keeps the return address in a register and uses small stack frames, while Windows x64 has to reserve an extra 32 bytes of "shadow space" on the stack for every call. We didn't measure this directly, so we're treating it as the likely explanation and not a proven one.

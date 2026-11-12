@@ -11,7 +11,7 @@ int main()
     uint64_t start, end;
     uint64_t n = 10000;
     uint64_t total = 0;
-
+    led_on(LED_GREEN);
     start = now_ns();
 
     for (uint64_t i = 1; i <= n; i++)
@@ -20,6 +20,8 @@ int main()
     }
 
     end = now_ns();
+    led_off(LED_GREEN);
+
     printf("sum: %" PRIu64 "\n", total);
     printf("Time taken: %" PRIu64 " ns\n", end - start);
 }
