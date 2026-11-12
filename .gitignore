@@ -25,9 +25,21 @@ stage0/question_b/recursion_sum_O3
 helper_function/test_helpers
 stageA/stageA_plot
 stageA/stageA_manual
+stageC/stageC_malloc
+stageC/stageC_replay
+stageC/stageC_rival
+stageC/test_parser
 
 # Generated data dumps and temporary artifacts
 *.dat
 *.log
 *.zip
 vgcore.*
+
+# Python bytecode (created when Python/stageA_Python.py runs)
+__pycache__/
+*.pyc
+
+# Personal scratch work and local data (not for the group repo)
+codespace/
+data/

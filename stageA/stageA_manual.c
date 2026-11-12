@@ -25,6 +25,8 @@
  *   ./stageA/stageA_manual test20
  *   ./stageA/stageA_manual dev
  *   ./stageA/stageA_manual stress
+ * Or from inside stageA:
+ *   ./stageA_manual test20   (dev / stress likewise)
  *
  * Check your answers against:
  *   data/group_data/test20_expected.txt  (table + signals for short=3, long=5)
@@ -34,6 +36,13 @@
  */
 #include <stdio.h>
 #include <string.h>                      /* strcmp */
+#ifdef _WIN32
+#include <direct.h>
+#define change_directory _chdir
+#else
+#include <unistd.h>
+#define change_directory chdir
+#endif
 #include "../helper_function/trade_io.h"
 #include "engine/vwap.h"
 #include "engine/ohlc.h"
@@ -51,6 +60,28 @@
 #define TEST_LONG  5
 #define DEV_SHORT  35          /* Group 06: dev_1M.csv and stress_full.csv */
 #define DEV_LONG   60
+
+/* Keep the dataset paths relative to the project root.
+ * If launched inside stageA, move this process to its parent folder.
+ * This does not change the working directory of the user's terminal.
+ */
+static int set_project_directory(void) {
+    FILE *check = fopen(TEST20_PATH, "r");
+    if (check != NULL) {
+        fclose(check);
+        return 1;
+    }
+    check = fopen("../" TEST20_PATH, "r");
+    if (check != NULL) {
+        fclose(check);
+        if (change_directory("..") == 0) return 1;
+        perror("Cannot switch to the project root");
+        return 0;
+    }
+    fprintf(stderr, "Cannot find %s. Run from the project root or stageA folder.\n",
+            TEST20_PATH);
+    return 0;
+}
 
 /*
  * run - process one whole trade file
@@ -191,6 +222,8 @@ int main(int argc, char *argv[]) {
         print_usage();
         return 1;
     }
+
+    if (!set_project_directory()) return 1;
 
     const char *dataset = argv[1];
     const char *path;

@@ -4,6 +4,8 @@
 #   make stage0     build stage0 only (question a + question b)
 #   make stageA     build stageA only (stageA_manual = Version 0, stageA_plot)
 #   make plotA      build stageA_plot and run it (writes stageA/signals.dat + signals.png)
+#   make stageC     build stageC only (stageC_malloc, stageC_replay, stageC_rival)
+#   make asm        write the -O2 assembly of the fixed-point kernels to stageC/asm/
 #   make clean      delete all built executables
 #
 # Works with GNU make on Windows (MinGW gcc adds .exe automatically), Linux and macOS.
@@ -43,11 +45,38 @@ TRADE_IO   = helper_function/trade_io.c helper_function/trade_io.h
 # helper headers used by the stage0 programs
 HELPERS = helper_function/timing.h helper_function/led.h
 
-ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA)
+# ---- stageC ----
+# stageC_malloc = Stage B in-memory engine with a malloc'd array (Leroi)
+# stageC_replay = real-time replay, LED / coloured signals, latency, lag, live P&L
+# stageC_rival  = rival bot P&L for v0 / fast / mem and the R sweep (rival_sweep.dat)
+STAGEC_MALLOC = stageC/stageC_malloc$(EXE)
+STAGEC_REPLAY = stageC/stageC_replay$(EXE)
+STAGEC_RIVAL  = stageC/stageC_rival$(EXE)
+STAGEC_TEST   = stageC/test_parser$(EXE)
+STAGEC = $(STAGEC_MALLOC) $(STAGEC_REPLAY) $(STAGEC_RIVAL) $(STAGEC_TEST)
 
-.PHONY: all stage0 stageA plotA clean
+# Stage B engine modules: double (Version 0 maths) and fixed-point (fastest)
+ENGINE_B_DBL = stageB/engine/vwap.c stageB/engine/ohlc.c stageB/engine/sma.c stageB/engine/sma_naive.c stageB/engine/signal.c
+ENGINE_B_FX  = stageB/engine/vwap_fx.c stageB/engine/ohlc_fx.c stageB/engine/sma_fx.c stageB/engine/signal_fx.c
+ENGINE_C     = stageC/engine/feed.c stageC/engine/fast_parse.c stageC/engine/engine.c stageC/engine/rival.c stageC/engine/latency.c stageC/engine/display.c
+ENGINE_C_H   = $(wildcard stageC/engine/*.h) $(wildcard stageB/engine/*.h) $(HELPERS)
 
-all: stage0 stageA
+# extra flags for Stage C, e.g. make stageC CFLAGS_C="-O2 -mcpu=cortex-a76" on the Pi
+CFLAGS_C = -O2 -Wall
+
+# assembly listings are named after the machine: x86-64 on the laptop, aarch64 on the Pi
+ifeq ($(OS),Windows_NT)
+ASM_TAG = x86-64
+else
+ASM_TAG = $(shell uname -m)
+endif
+ASM_SRC = stageC/engine/engine.c stageB/engine/sma_fx.c stageB/engine/signal_fx.c stageB/engine/vwap_fx.c stageB/engine/ohlc_fx.c
+
+ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC)
+
+.PHONY: all stage0 stageA plotA stageC test_parser asm clean
+
+all: stage0 stageA stageC
 
 stage0: $(STAGE0_A) $(STAGE0_B)
 
@@ -75,6 +104,28 @@ $(STAGEA_V0): stageA/stageA_manual.c stageA/engine/sma.c stageA/engine/sma.h $(E
 # stageA plot: only SMA + signal + report (for the .dat file), naive sma.c = Version 0
 $(STAGEA_PLOT): stageA/stageA_plot.c stageA/engine/sma.c stageA/engine/sma.h stageA/engine/signal.c stageA/engine/signal.h stageA/engine/report.c stageA/engine/report.h $(TRADE_IO)
 	$(CC) -O2 -Wall stageA/stageA_plot.c stageA/engine/sma.c stageA/engine/signal.c stageA/engine/report.c helper_function/trade_io.c -o $@
+
+stageC: $(STAGEC)
+
+# stageC malloc (Leroi): same build line as in stageC/stageC_malloc.c
+$(STAGEC_MALLOC): stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageC/engine/trades_malloc.h $(TRADE_IO)
+	$(CC) $(CFLAGS_C) stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageB/engine/vwap.c stageB/engine/ohlc.c stageB/engine/sma.c stageB/engine/signal.c stageB/engine/report.c helper_function/trade_io.c -o $@
+
+$(STAGEC_REPLAY): stageC/stageC_replay.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) -o $@
+
+$(STAGEC_RIVAL): stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) -lm -o $@
+
+# parser check: ./stageC/test_parser data/stress_full.csv
+test_parser: $(STAGEC_TEST)
+
+$(STAGEC_TEST): stageC/test_parser.c stageC/engine/feed.c stageC/engine/fast_parse.c $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/test_parser.c stageC/engine/feed.c stageC/engine/fast_parse.c -o $@
+
+# gcc -S -O2 for each fixed-point kernel -> stageC/asm/<name>_<machine>_O2.s
+asm:
+	$(foreach f,$(ASM_SRC),$(CC) -S -O2 -fno-asynchronous-unwind-tables -fno-ident $(f) -o stageC/asm/$(basename $(notdir $(f)))_$(ASM_TAG)_O2.s &&) echo assembly written to stageC/asm/
 
 clean:
 ifeq ($(OS),Windows_NT)
