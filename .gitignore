@@ -23,8 +23,7 @@ stage0/question_b/recursion_sum_O1
 stage0/question_b/recursion_sum_O2
 stage0/question_b/recursion_sum_O3
 helper_function/test_helpers
-stageA/stageA_stream
-stageA/stageA_running_sma
+stageA/stageA_plot
 stageA/stageA_manual
 stageC/stageC_malloc
 stageC/stageC_replay

@@ -2,7 +2,8 @@
 #
 #   make            build everything (stage0 + stageA)
 #   make stage0     build stage0 only (question a + question b)
-#   make stageA     build stageA only (stageA_manual = Version 0, stageA_running_sma, stageA_stream)
+#   make stageA     build stageA only (stageA_manual = Version 0, stageA_plot)
+#   make plotA      build stageA_plot and run it (writes stageA/signals.dat + signals.png)
 #   make stageC     build stageC only (stageC_malloc, stageC_replay, stageC_rival)
 #   make asm        write the -O2 assembly of the fixed-point kernels to stageC/asm/
 #   make clean      delete all built executables
@@ -29,15 +30,14 @@ OPT_LEVELS = O0 O1 O2 O3
 STAGE0_B = $(foreach p,loop_sum recursion_sum,$(foreach o,$(OPT_LEVELS),stage0/question_b/$(p)_$(o)$(EXE)))
 
 # ---- stageA ----
-# stageA_manual      = Version 0 (engine modules + naive sma.c)
-# stageA_running_sma = same program with running_sma.c (ladder rung)
-# stageA_stream      = original single-file version (reference)
+# stageA_manual      = Version 0 (engine modules + naive sma.c), timed, no plot files
+# stageA_plot        = writes signals.dat (dev_1M slice, Version 0 SMA) and runs gnuplot
+# Run the timed programs with one dataset: test20 | dev | stress
 STAGEA_V0      = stageA/stageA_manual$(EXE)
-STAGEA_RUNNING = stageA/stageA_running_sma$(EXE)
-STAGEA_STREAM  = stageA/stageA_stream$(EXE)
-STAGEA = $(STAGEA_V0) $(STAGEA_RUNNING) $(STAGEA_STREAM)
+STAGEA_PLOT    = stageA/stageA_plot$(EXE)
+STAGEA = $(STAGEA_V0) $(STAGEA_PLOT)
 
-# engine modules shared by stageA_manual and stageA_running_sma (SMA file added per target)
+# engine modules used by stageA_manual (naive sma.c added in its rule)
 ENGINE_A   = stageA/engine/vwap.c stageA/engine/ohlc.c stageA/engine/signal.c stageA/engine/report.c
 ENGINE_A_H = stageA/engine/vwap.h stageA/engine/ohlc.h stageA/engine/signal.h stageA/engine/report.h
 TRADE_IO   = helper_function/trade_io.c helper_function/trade_io.h
@@ -74,13 +74,17 @@ ASM_SRC = stageC/engine/engine.c stageB/engine/sma_fx.c stageB/engine/signal_fx.
 
 ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC)
 
-.PHONY: all stage0 stageA stageC test_parser asm clean
+.PHONY: all stage0 stageA plotA stageC test_parser asm clean
 
 all: stage0 stageA stageC
 
 stage0: $(STAGE0_A) $(STAGE0_B)
 
 stageA: $(STAGEA)
+
+# build the plot program and run it (from the project root)
+plotA: $(STAGEA_PLOT)
+	./$(STAGEA_PLOT)
 
 # question a: gcc stage0/question_a/a_loop_sum.c -o a_loop_sum
 $(STAGE0_A): stage0/question_a/a_loop_sum.c $(HELPERS)
@@ -97,13 +101,9 @@ $(foreach lvl,$(OPT_LEVELS),$(eval $(call QB_RULE,$(lvl))))
 $(STAGEA_V0): stageA/stageA_manual.c stageA/engine/sma.c stageA/engine/sma.h $(ENGINE_A) $(ENGINE_A_H) $(TRADE_IO)
 	$(CC) -O2 -Wall stageA/stageA_manual.c $(ENGINE_A) stageA/engine/sma.c helper_function/trade_io.c -o $@
 
-# stageA running-sum rung: same modules but running_sma.c instead of sma.c
-$(STAGEA_RUNNING): stageA/stageA_running_sma.c stageA/engine/running_sma.c stageA/engine/running_sma.h $(ENGINE_A) $(ENGINE_A_H) $(TRADE_IO)
-	$(CC) -O2 -Wall stageA/stageA_running_sma.c $(ENGINE_A) stageA/engine/running_sma.c helper_function/trade_io.c -o $@
-
-# stageA reference: gcc -O2 -Wall stageA/stageA_stream.c helper_function/trade_io.c -o stageA/stageA_stream
-$(STAGEA_STREAM): stageA/stageA_stream.c $(TRADE_IO)
-	$(CC) -O2 -Wall stageA/stageA_stream.c helper_function/trade_io.c -o $@
+# stageA plot: only SMA + signal + report (for the .dat file), naive sma.c = Version 0
+$(STAGEA_PLOT): stageA/stageA_plot.c stageA/engine/sma.c stageA/engine/sma.h stageA/engine/signal.c stageA/engine/signal.h stageA/engine/report.c stageA/engine/report.h $(TRADE_IO)
+	$(CC) -O2 -Wall stageA/stageA_plot.c stageA/engine/sma.c stageA/engine/signal.c stageA/engine/report.c helper_function/trade_io.c -o $@
 
 stageC: $(STAGEC)
 
