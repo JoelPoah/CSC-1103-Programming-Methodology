@@ -4,25 +4,36 @@
  * This is the group's VERSION 0: helper library (sscanf), double prices and
  * the NAIVE SMA in engine/sma.c (re-adds the whole window every trade).
  * Every ladder speedup, the rival bot and the race compare against it.
- * The running-sum SMA rung is stageA_running_sma.c.
+ *
+ * One dataset per run, picked by the first argument:
+ *   test20 - data/group_data/test20.csv, short=3,  long=5,  full table (correctness)
+ *   dev    - data/group_data/dev_1M.csv, short=35, long=60, summary only
+ *   stress - data/stress_full.csv,       short=35, long=60, summary only (benchmark)
+ *
+ * No timing inside: the group times every ladder version from outside with
+ * benchmark/benchmark.c (now_ns() around the whole program), e.g. on "stress".
+ * Because this program is timed, it writes NO signals.dat / signals.png (the
+ * brief says never to write plot files in a version you time). The plot is
+ * made by stageA_plot.c.
  *
  * Build (from the project root):
- *   gcc -O2 -Wall stageA/stageA_manual.c stageA/engine/vwap.c stageA/engine/ohlc.c
- *       stageA/engine/sma.c stageA/engine/signal.c stageA/engine/report.c
- *       helper_function/trade_io.c -o stageA/stageA_manual
+ *   make stageA
+ *   or: gcc -O2 -Wall stageA/stageA_manual.c stageA/engine/vwap.c stageA/engine/ohlc.c
+ *           stageA/engine/sma.c stageA/engine/signal.c stageA/engine/report.c
+ *           helper_function/trade_io.c -o stageA/stageA_manual
  * Run (from the project root):
- *   ./stageA/stageA_manual
+ *   ./stageA/stageA_manual test20
+ *   ./stageA/stageA_manual dev
+ *   ./stageA/stageA_manual stress
  *
  * Check your answers against:
  *   data/group_data/test20_expected.txt  (table + signals for short=3, long=5)
- *   the dev_1M numbers (short=35, long=60), final VWAP 76217.01291587:
- *     engine/sma.c (naive, Version 0)        -> 2509 BUY, 2469 SELL
- *     engine/running_sma.c (running sum)     -> 2465 BUY, 2464 SELL
- *   (they differ because the running sum drifts by tiny rounding errors, so
- *    flat stretches where short SMA == long SMA no longer give d = 0 exactly)
+ *   dev    (short=35, long=60): final VWAP 76217.01291587, 2509 BUY, 2469 SELL
+ *   stress (short=35, long=60): 8,928,944 trades, final VWAP 76718.67569936,
+ *                               20386 BUY, 20176 SELL
  */
 #include <stdio.h>
-#include <stdlib.h>
+#include <string.h>                      /* strcmp */
 #include "../helper_function/trade_io.h"
 #include "engine/vwap.h"
 #include "engine/ohlc.h"
@@ -31,20 +42,15 @@
 #include "engine/report.h"
 
 /* ---- file paths (relative to the project root) ---- */
-#define TEST20_PATH   "data/group_data/test20.csv"
-#define DEV_PATH      "data/group_data/dev_1M.csv"
-#define SIGNALS_DAT   "stageA/signals.dat"
-#define PLOT_SCRIPT "stageA/plot_signals.gnuplot"
+#define TEST20_PATH "data/group_data/test20.csv"
+#define DEV_PATH    "data/group_data/dev_1M.csv"
+#define STRESS_PATH "data/stress_full.csv"
 
 /* ---- SMA windows ---- */
 #define TEST_SHORT 3
 #define TEST_LONG  5
-#define DEV_SHORT  35
+#define DEV_SHORT  35          /* Group 06: dev_1M.csv and stress_full.csv */
 #define DEV_LONG   60
-
-/* ---- slice written to signals.dat ---- */
-#define SLICE_START 1
-#define SLICE_LEN   2000
 
 /*
  * run - process one whole trade file
@@ -52,97 +58,73 @@
  * Hint: think of the function as a loop with one body. For every trade:
  *   a) read the trade
  *   b) update each calculation
- *   c) decide what to print / write
+ *   c) decide what to print
  * After the loop: finish the last OHLC bar and print the summary.
  *
- * Parameters you will probably need:
  *   path        - which CSV to read
  *   short_win   - SMA short window
  *   long_win    - SMA long window
  *   print_table - 1 = print one row per trade, 0 = summary only
- *   slice_from / slice_to - trade numbers to write to the .dat file
- *   dat_path    - output file name, or NULL for no .dat file
  *
- * Returns 0 on success, 1 on error.
+ * Returns the number of trades processed, or -1 on error.
  */
-static int run(const char *path, int short_win, int long_win, int print_table,
-               long long slice_from, long long slice_to, const char *dat_path) {
+static long long run(const char *path, int short_win, int long_win, int print_table) {
 
     /* STEP 1 - check the inputs
      * Hint: the short window must be smaller than the long window, and
      * the long window must not exceed MAX_WIN (defined in engine/sma.h).
-     * Print a message and return 1 if not.
      */
-    /* TODO */
     if (short_win >= long_win || long_win > MAX_WIN){
         printf("bad windows: need short < long <= %d\n", MAX_WIN);
-        return 1;
+        return -1;
     }
 
     /* STEP 2 - open the input file
      * Hint: open_trades(path) returns 1 on success, 0 on failure.
      */
-    /* TODO */
-    
     if (!open_trades(path)){
-        printf("cannot open %s\n", path); 
-        return 1; // fail
+        printf("cannot open %s\n", path);
+        return -1;
     }
 
-
-    /* STEP 3 - open the .dat output (only if dat_path is not NULL)
-     * Hint: dat_open(path) returns 1 if OK, 0 if not. The file itself stays
-     * inside report.c, so there is no FILE pointer here.
-     */
-    /* TODO */
-    if (dat_path != NULL ){
-        if (!dat_open(dat_path)){
-            printf("Failed to open .dat %s\n", dat_path);
-            close_trades();
-            return 1;
-        }
-    }
-    /* STEP 4 - reset every calculation
+    /* STEP 3 - reset every calculation
      * Each module keeps its own variables, so just call its *_init function.
      * Hint: sma_init needs the window id (SHORT_SMA / LONG_SMA) and its size.
      */
-    /* TODO */
     int signal_printed = 0;
+    long long n = 0;
     vwap_init();
     ohlc_init();
     sma_init(SHORT_SMA, short_win);
     sma_init(LONG_SMA, long_win);
     crossover_init();
 
-    /* STEP 5 - print the table header (only if print_table is 1) */
-    /* TODO */
+    /* STEP 4 - print the table header (only if print_table is 1) */
     if (print_table == 1){
         print_table_header();
     }
-    
 
-    /* STEP 6 - the main loop
+    /* STEP 5 - the main loop
      * Hint: while (next_trade()) { ... }  - inside it, use trade_number(),
      * trade_price(), trade_qty(), trade_time(), trade_is_buy().
      *
      * Inside the loop, in this order:
-     *   6a) VWAP:  vwap_update(...)
-     *   6b) OHLC:  ohlc_update(...)  - if it returns 1, print the finished
+     *   5a) VWAP:  vwap_update(...)
+     *   5b) OHLC:  ohlc_update(...)  - if it returns 1, print the finished
      *              bar (only when print_table is 1)
-     *   6c) SMA:   push the price into both windows (SHORT_SMA and LONG_SMA)
-     *   6d) If both SMAs are ready (sma_ready), get their values with sma_value
+     *   5c) SMA:   push the price into both windows (SHORT_SMA and LONG_SMA)
+     *   5d) If both SMAs are ready (sma_ready), get their values with sma_value
      *       and call crossover_update to get SIG_BUY / SIG_SELL / SIG_NONE.
      *       Remember: the short and long values may not exist for the first
      *       few trades - use the "have_*" flags so you print "-" in that case.
-     *   6e) If print_table is 1, print the row (print_trade_row).
+     *   5e) If print_table is 1, print the row (print_trade_row).
      *       Otherwise, print only the first 10 signals.
-     *   6f) If the trade number is inside [slice_from, slice_to] and the
-     *       long SMA is ready, write a row to the .dat file.
      */
-    /* TODO */
     while (next_trade()){
         int signal = SIG_NONE;
         double short_sma_value = 0.0, long_sma_value = 0.0;
+        n++;
+
         vwap_update(trade_price(), trade_qty());
         if (ohlc_update(trade_time(), trade_price()) && print_table == 1){
             print_bar(ohlc_finished_sec(), ohlc_finished_open(), ohlc_finished_high(), ohlc_finished_low(),
@@ -174,63 +156,81 @@ static int run(const char *path, int short_win, int long_win, int print_table,
                 print_signal(signal, trade_number());
                 signal_printed++;
         }
-
-        // trade number (dat_write_row does nothing if no .dat file is open)
-        if (have_sma_long && (trade_number() >= slice_from) && (trade_number() <= slice_to)){
-            //write a row to .dat file
-            dat_write_row(trade_number(), trade_price(), short_sma_value, long_sma_value, signal);
-        }
     }
 
-
-
-
-    /* STEP 7 - after the loop
-     * Hint: print the last OHLC bar (only when print_table is 1), then close
-     * the .dat file and call close_trades().
+    /* STEP 6 - after the loop
+     * Hint: print the last OHLC bar (only when print_table is 1), then call
+     * close_trades().
      */
     if (ohlc_flush() && print_table == 1) {
         print_bar_header();
         print_bar(ohlc_finished_sec(), ohlc_finished_open(), ohlc_finished_high(), ohlc_finished_low(),
                   ohlc_finished_close(), ohlc_finished_n());
     }
-    dat_close();
     close_trades();
 
-    /* STEP 8 - print the summary (print_summary) with the final VWAP and the
+    /* STEP 7 - print the summary (print_summary) with the final VWAP and the
      * BUY / SELL counts (crossover_buys / crossover_sells).
      */
     print_summary(vwap_value(), crossover_buys(), crossover_sells());
-    
-    return 0;
 
+    return n;
 }
 
-int main(void) {
-    /* PART A - correctness check on the 20-trade file
-     * Hint: call run(...) with TEST20_PATH, TEST_SHORT, TEST_LONG, print_table=1,
-     * no slice (0, 0) and no .dat file (NULL).
-     */
-    printf("=== test20.csv (short=%d, long=%d) ===\n", TEST_SHORT, TEST_LONG);
-    if (run(TEST20_PATH, TEST_SHORT, TEST_LONG, 1, 0, 0, NULL) != 0) {
+/* print_usage - shown when the dataset argument is missing or wrong */
+static void print_usage(void) {
+    printf("usage: ./stageA/stageA_manual test20 | dev | stress\n");
+    printf("  test20 : %s (short=%d, long=%d), prints every trade\n", TEST20_PATH, TEST_SHORT, TEST_LONG);
+    printf("  dev    : %s (short=%d, long=%d)\n", DEV_PATH, DEV_SHORT, DEV_LONG);
+    printf("  stress : %s (short=%d, long=%d)\n", STRESS_PATH, DEV_SHORT, DEV_LONG);
+}
+
+int main(int argc, char *argv[]) {
+    // we need exactly one word after the program name: test20, dev or stress
+    if (argc != 2){
+        print_usage();
         return 1;
     }
 
-    /* PART B - the full dev file
-     * Hint: same call as Part A but with DEV_PATH, DEV_SHORT, DEV_LONG,
-     * print_table=0, the slice numbers and SIGNALS_DAT.
-     */
-    printf("\n=== dev_1M.csv (short=%d, long=%d) ===\n", DEV_SHORT, DEV_LONG);
-    if (run(DEV_PATH, DEV_SHORT, DEV_LONG, 0,
-            SLICE_START, SLICE_START + SLICE_LEN - 1, SIGNALS_DAT) != 0) {
+    const char *dataset = argv[1];
+    const char *path;
+    int short_window;
+    int long_window;
+    int print_table;
+
+    // pick the file, the SMA windows and how much to print for this dataset
+    if (strcmp(dataset, "test20") == 0){
+        path = TEST20_PATH;
+        short_window = TEST_SHORT;
+        long_window = TEST_LONG;
+        print_table = 1;            // only 20 trades, so print every one
+    }
+    else if (strcmp(dataset, "dev") == 0){
+        path = DEV_PATH;
+        short_window = DEV_SHORT;
+        long_window = DEV_LONG;
+        print_table = 0;            // 1M trades, summary only
+    }
+    else if (strcmp(dataset, "stress") == 0){
+        path = STRESS_PATH;
+        short_window = DEV_SHORT;
+        long_window = DEV_LONG;
+        print_table = 0;            // full day, summary only (this is the benchmark)
+    }
+    else {
+        printf("unknown dataset: %s\n", dataset);
+        print_usage();
         return 1;
     }
 
-    /* PART C - draw signals.png */
-    printf("\nRunning gnuplot on %s ...\n", PLOT_SCRIPT);
-    if (system("gnuplot " PLOT_SCRIPT) != 0) {
-        printf("gnuplot failed or is not installed; signals.dat is still written.\n");
+    printf("=== %s (short=%d, long=%d) ===\n", path, short_window, long_window);
+
+    long long trade_count = run(path, short_window, long_window, print_table);
+
+    if (trade_count < 0){
+        return 1;                   // run() already printed what went wrong
     }
 
+    printf("Trades: %lld\n", trade_count);
     return 0;
 }
