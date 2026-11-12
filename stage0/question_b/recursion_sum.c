@@ -9,14 +9,14 @@ int main()
 {
     led_init();
     int n = 10000;
-    uint64_t start, end;
+    uint64_t start, end, result;
 
     led_on(LED_GREEN); 
     start = now_ns();
-    printf("sum: %d\n", counter(n));
+    result = counter(n);
     end = now_ns();
     led_off(LED_GREEN);
-
+    printf("sum: %" PRIu64 "\n", result);
     printf("Time taken: %" PRIu64 " ns\n", end - start);
     led_cleanup();
     return 0;

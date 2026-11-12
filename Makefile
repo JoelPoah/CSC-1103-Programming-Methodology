@@ -7,6 +7,7 @@
 #   make stageC     build stageC only (stageC_malloc, stageC_replay, stageC_rival)
 #   make asm        write the -O2 assembly of the fixed-point kernels to stageC/asm/
 #   make ladder     build every version V0-V7 from src/ into bin/
+#   make benchmark  build the -O0..-O3 benchmark tool (benchmark/benchmark.c)
 #   make clean      delete all built executables
 #
 # Works with GNU make on Windows (MinGW gcc adds .exe automatically), Linux and macOS.
@@ -42,6 +43,9 @@ STAGEA = $(STAGEA_V0) $(STAGEA_PLOT)
 ENGINE_A   = stageA/engine/vwap.c stageA/engine/ohlc.c stageA/engine/signal.c stageA/engine/report.c
 ENGINE_A_H = stageA/engine/vwap.h stageA/engine/ohlc.h stageA/engine/signal.h stageA/engine/report.h
 TRADE_IO   = helper_function/trade_io.c helper_function/trade_io.h
+
+# ---- benchmark ----
+BENCHMARK = benchmark/benchmark$(EXE)
 
 # helper headers used by the stage0 programs
 HELPERS = helper_function/timing.h helper_function/led.h
@@ -98,9 +102,9 @@ SRC_H      = $(wildcard src/*.h src/*/*.h) $(HELPERS)
 SRC_ENGINE = src/engine/vwap.c src/engine/ohlc.c src/engine/signal.c src/engine/report.c
 SRC_FX     = src/engine_fx/vwap_fx.c src/engine_fx/ohlc_fx.c src/engine_fx/sma_fx.c src/engine_fx/signal_fx.c src/engine/report.c
 
-ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER)
+ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER) $(BENCHMARK)
 
-.PHONY: all stage0 stageA plotA stageC test_parser asm ladder clean
+.PHONY: all stage0 stageA plotA stageC test_parser asm ladder benchmark clean
 
 all: stage0 stageA stageC ladder
 
@@ -178,6 +182,12 @@ $(LADDER_V6): src/v5-v7_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/
 
 $(LADDER_V7): src/v5-v7_main_stageB_fixed.c src/store/v7_trades_fx_fread.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) $(SRC_H)
 	$(CC) $(CFLAGS_L) src/v5-v7_main_stageB_fixed.c src/store/v7_trades_fx_fread.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) -o $@
+
+benchmark: $(BENCHMARK)
+
+# benchmark: gcc -O2 -Wall benchmark/benchmark.c -o benchmark/benchmark
+$(BENCHMARK): benchmark/benchmark.c helper_function/timing.h
+	$(CC) -O2 -Wall benchmark/benchmark.c -o $@
 
 clean:
 ifeq ($(OS),Windows_NT)

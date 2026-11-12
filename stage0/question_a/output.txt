@@ -1,11 +1,67 @@
-WINDOWS:
-.\a_loop_sum.exe
-sum: 5000000050000000
-Time taken: 66927900 ns
+LAPTOP:
+    OPTIMISATION LEVELS (WINDOWS, gcc, N = 100000000, fastest of 3 runs):
+    Speedup = O0 time / Ox time
+
+    a_loop_sum.c (N entered by user)
+    Flag   Time (ns)     Speedup
+    -O0    75832100      1.00x
+    -O1    47173500      1.61x
+    -O2    41618800      1.82x
+    -O3    37401600      2.03x
+
+    a_loop_sum_fixed.c (N fixed in program)
+    Flag   Time (ns)     Speedup
+    -O0    75564700      1.00x
+    -O1    48163800      1.57x
+    -O2    < 100         loop removed
+    -O3    < 100         loop removed
+
+RPI:
+    OPTIMISATION LEVELS (RASPBERRY PI, gcc, N = 100000000, fastest of 3 runs):
+    Speedup = O0 time / Ox time
+
+    a_loop_sum.c (N entered by user)
+    Flag   Time (ns)     Speedup
+    -O0    2821988846    1.00x
+    -O1    857180637     3.29x
+    -O2    450005649     6.27x
+    -O3    450788255     6.26x
+
+    a_loop_sum_fixed.c (N fixed in program)
+    Flag   Time (ns)     Speedup
+    -O0    278175162     1.00x
+    -O1    41697708      6.67x
+    -O2    < 100         loop removed
+    -O3    < 100         loop removed
 
 
+Prediction 1: Higher optimisation level = faster
 
-RASPBERRY PI:
-./a_loop_sum
-sum: 5000000050000000
-Time taken: 315616880 ns
+Expected: both programs would run faster as the optimisation level goes up from O0 to O3.
+
+Result: The prediction mostly held. The user-input version got faster at every level up to O2
+(Laptop 1.00x -> 1.82x, Pi 1.00x -> 6.27x). O3 gave little or no extra gain over O2
+(Laptop 2.03x, Pi 6.26x). The fixed version went from about 75 ms (Laptop) / 278 ms (Pi)
+at O0 to under 100 ns at O2 and O3.
+
+Reason: At O0 the compiler does almost no optimisation, so it reads and writes i and total
+to memory on every loop. From O1 it keeps them in CPU registers and makes the loop
+simpler, which saves a lot of time. O3's extra optimisations don't help much on a loop this simple.
+
+
+Prediction 2: Fixed N would be faster than N entered by the user
+
+Expected: the fixed version would be faster, because the compiler already knows the value of N.
+
+Result: The prediction held at O2 and O3. The fixed version took under 100 ns, while the
+user-input version still took about 42 ms (Laptop) and 450 ms (Pi). At O0 and O1 the two
+versions were about the same speed on the Laptop.
+
+Reason: When N is fixed, the compiler can work out the whole sum before the program runs
+and just print the answer (5000000050000000 appears as a constant in the O2 assembly), so
+the loop is removed. When N is entered by the user, the value is only known at runtime,
+so the loop still has to run.
+
+Note: On the Pi, the user-input version at O0 (about 2.82 s) was about 10x slower than the
+fixed version at O0 (about 278 ms), even though both run the same loop. This was repeated
+twice with the same result. The cause has not been confirmed yet.

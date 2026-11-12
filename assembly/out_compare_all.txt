@@ -1,0 +1,80 @@
+Compiling 8 builds...
+Checking outputs...
+  stageB_inmem_sma: IDENTICAL to stageB_inmem
+  stageB_inmem_ohlc: IDENTICAL to stageB_inmem
+  stageB_inmem_asm: IDENTICAL to stageB_inmem
+  stageB_fixed_sma: IDENTICAL to stageB_fixed
+  stageB_fixed_ohlc: IDENTICAL to stageB_fixed
+  stageB_fixed_asm: IDENTICAL to stageB_fixed
+Timing 5 runs per build, pinned with: taskset -c 2
+  round 1 of 5
+  round 2 of 5
+  round 3 of 5
+  round 4 of 5
+  round 5 of 5
+--- stageB_inmem (5 runs) ---
+  dataset              median        min        avg        max
+  test20.csv            0.067      0.067      0.067      0.068 ms
+  dev_1M.csv           21.091     21.046     21.077     21.098 ms
+  stress_full.csv     187.625    187.114    187.518    187.664 ms
+--- stageB_inmem_sma (5 runs) ---
+  dataset              median        min        avg        max
+  test20.csv            0.067      0.066      0.067      0.067 ms
+  dev_1M.csv           20.298     20.283     20.304     20.342 ms
+  stress_full.csv     180.303    180.205    180.382    180.656 ms
+--- stageB_inmem_ohlc (5 runs) ---
+  dataset              median        min        avg        max
+  test20.csv            0.068      0.067      0.068      0.072 ms
+  dev_1M.csv           18.843     18.724     18.821     18.922 ms
+  stress_full.csv     168.063    167.779    168.046    168.312 ms
+--- stageB_inmem_asm (5 runs) ---
+  dataset              median        min        avg        max
+  test20.csv            0.067      0.067      0.067      0.067 ms
+  dev_1M.csv           17.850     17.827     17.861     17.914 ms
+  stress_full.csv     159.183    158.666    159.041    159.372 ms
+--- stageB_fixed (5 runs) ---
+  dataset              median        min        avg        max
+  test20.csv            0.068      0.067      0.068      0.068 ms
+  dev_1M.csv           18.215     18.150     18.200     18.254 ms
+  stress_full.csv     161.630    160.831    161.438    161.762 ms
+--- stageB_fixed_sma (5 runs) ---
+  dataset              median        min        avg        max
+  test20.csv            0.068      0.068      0.068      0.069 ms
+  dev_1M.csv           18.596     18.450     18.584     18.775 ms
+  stress_full.csv     164.318    163.632    164.943    168.085 ms
+--- stageB_fixed_ohlc (5 runs) ---
+  dataset              median        min        avg        max
+  test20.csv            0.067      0.067      0.067      0.068 ms
+  dev_1M.csv           16.100     15.933     16.073     16.166 ms
+  stress_full.csv     143.070    141.814    142.681    143.241 ms
+--- stageB_fixed_asm (5 runs) ---
+  dataset              median        min        avg        max
+  test20.csv            0.068      0.067      0.068      0.068 ms
+  dev_1M.csv           16.566     16.441     16.602     16.882 ms
+  stress_full.csv     146.948    146.514    146.945    147.397 ms
+
+================ SUMMARY (median Process time) ================
+
+dev_1M.csv
+  build                    median     vs inmem (C)     vs fixed (C)
+  stageB_inmem          21.091 ms            +0.0%           +15.8%
+  stageB_inmem_sma      20.298 ms            -3.8%           +11.4%
+  stageB_inmem_ohlc     18.843 ms           -10.7%            +3.4%
+  stageB_inmem_asm      17.850 ms           -15.4%            -2.0%
+  stageB_fixed          18.215 ms           -13.6%            +0.0%
+  stageB_fixed_sma      18.596 ms           -11.8%            +2.1%
+  stageB_fixed_ohlc     16.100 ms           -23.7%           -11.6%
+  stageB_fixed_asm      16.566 ms           -21.5%            -9.1%
+  pure C: fixed-point is 1.16x faster than double
+
+stress_full.csv
+  build                    median     vs inmem (C)     vs fixed (C)
+  stageB_inmem         187.625 ms            +0.0%           +16.1%
+  stageB_inmem_sma     180.303 ms            -3.9%           +11.6%
+  stageB_inmem_ohlc    168.063 ms           -10.4%            +4.0%
+  stageB_inmem_asm     159.183 ms           -15.2%            -1.5%
+  stageB_fixed         161.630 ms           -13.9%            +0.0%
+  stageB_fixed_sma     164.318 ms           -12.4%            +1.7%
+  stageB_fixed_ohlc    143.070 ms           -23.7%           -11.5%
+  stageB_fixed_asm     146.948 ms           -21.7%            -9.1%
+  pure C: fixed-point is 1.16x faster than double
