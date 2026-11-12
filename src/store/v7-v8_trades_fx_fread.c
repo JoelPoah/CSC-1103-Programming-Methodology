@@ -1,5 +1,5 @@
 /*
- * v7_trades_fx_fread.c - fixed-point trades, the whole file read with ONE fread (Lucas, V7)
+ * v7-v8_trades_fx_fread.c - fixed-point trades, the whole file read with ONE fread (Lucas, V7, V8)
  *
  * Lucas's Stage C loader (stageC/engine/feed.c) behind the same
  * load_trades_fx() interface as V5 and V6, so the main program, the parser

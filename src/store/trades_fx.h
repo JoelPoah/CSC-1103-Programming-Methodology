@@ -5,11 +5,11 @@
  * (scaled by PRICE_SCALE and QTY_SCALE from fixed.h) instead of double.
  *
  * One header, three versions. Link exactly ONE of them:
- *   v5_trades_fx_array.c  - fixed-size global array of MAX_TRADES       (V5)
- *   v6_trades_fx_malloc.c - malloc'd array sized to the file, fgets     (V6)
- *   v7_trades_fx_fread.c  - same array, whole file read with one fread  (V7)
+ *   v5_trades_fx_array.c    - fixed-size global array of MAX_TRADES       (V5)
+ *   v6_trades_fx_malloc.c   - malloc'd array sized to the file, fgets     (V6)
+ *   v7-v8_trades_fx_fread.c - same array, whole file read with one fread  (V7, V8)
  * All hand back the array the same way (Leroi's Stage C interface), so
- * v5-v7_main_stageB_fixed.c is identical for every version; only WHERE the
+ * v5-v8_main_stageB_fixed.c is identical for every version; only WHERE the
  * array lives changes.
  */
 #ifndef TRADES_FX_H

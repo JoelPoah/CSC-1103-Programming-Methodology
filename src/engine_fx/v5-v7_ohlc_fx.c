@@ -1,5 +1,7 @@
 /*
- * ohlc_fx.c - one-second OHLC bars with fixed-point prices (see ohlc_fx.h)
+ * v5-v7_ohlc_fx.c - one-second OHLC bars with fixed-point prices (see ohlc_fx.h)
+ *
+ * V5 - V7. V8 links engine_asm/v8_ohlc_fx.s (AArch64 assembly) instead.
  */
 #include "ohlc_fx.h"
 
