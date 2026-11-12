@@ -1,179 +1,247 @@
 /*
- * stageC_replay.c - Stage C real-time replay with LED / terminal signals,
- *                   latency, lag counter and live P&L against the rival bot
+ * stageC_replay.c - Stage C real-time replay (Lucas)
  *
- * Trades are released one at a time in timestamp order, on a replay clock:
- *     release time of trade t = (tau_t - tau_first) / speed      (brief, formula 9)
- * The program waits (busy-polls) until each trade's release time, then the
- * chosen engine processes it. For every trade it measures
- *     processing time = decided - started
- *     latency         = decided - released                       (brief, formula 8)
- *     lag             = started - released  (how far behind the replay clock)
- * If the engine is slower than the market, lag builds up and latency grows.
+ * What it does:
+ *   1) LOAD:    Leroi's load_trades_malloc() reads the whole CSV into an array
+ *               made with malloc to fit the file. Every trade's timestamp in
+ *               that array is the replay clock.
+ *   2) REPLAY:  trade i is released at   start + (time of trade i - time of
+ *               the first trade) / speed.  The program waits for that moment,
+ *               then gives the trade to the chosen engine and times it:
+ *                 v0  = Version 0 (Stage A): reads the trade's line from the
+ *                       file with next_trade() and uses the Stage A modules
+ *                 mem = fastest version: takes the trade from Leroi's array
+ *                       and uses Leroi's Stage B fixed-point modules
+ *   3) SIGNAL:  each BUY / SELL is printed in colour and, with --led on the Pi,
+ *               shown on the status LED (green = BUY, red = SELL)
+ *   4) SUMMARY: average and worst processing time and latency, the biggest lag
+ *               behind the replay clock, and the P&L against the rival bot
  *
  * Usage (from the project root):
- *   stageC_replay <file.csv> [options]
- *     --engine v0|fast|mem  which version to run (default mem = fastest)
- *     --speed X             replay speed: 1 = real time, 100, 1000 ...
- *                           0 = as fast as possible, no clock (default 1000)
- *     --minutes M           stop after M minutes of MARKET time (0 = all)
- *     --from-min M          start M minutes after the first trade
- *     --short S --long L    SMA windows (default 35 / 60, Group 06)
- *     --rival R             rival reaction time in us (default 1)
- *     --led                 drive the Pi's status LED (green BUY, red SELL)
- *     --signals / --quiet   force per-signal lines on / off (default: on
- *                           for speed <= 100, off above, so printing does
- *                           not flood the terminal)
+ *   stageC_replay <file.csv> [--engine v0|mem] [--speed X] [--minutes M]
+ *                 [--from-min M] [--short S] [--long L] [--rival R_us]
+ *                 [--led] [--signals | --quiet]
+ *     --speed X       1 = real time, 100, 1000 ... ; 0 = no clock (as fast as possible)
+ *     --minutes M     stop after M minutes of MARKET time (0 = the whole file)
+ *     --from-min M    start M market minutes after the first trade
+ *     --short/--long  SMA windows (default 35 and 60)
+ *     --rival R_us    rival reaction time in microseconds (default 1)
+ *     --led           drive the Pi's status LED (run with sudo)
+ *     --signals       print every signal
+ *     --quiet         print only the summary (no signal or status lines)
  *
- * Examples:
- *   real speed, 10 minutes:   stageC_replay data/stress_full.csv --speed 1 --minutes 10 --led
- *   full day at 100x / 1000x: stageC_replay data/stress_full.csv --speed 100
- *                             stageC_replay data/stress_full.csv --speed 1000
- *   race (two terminals):     stageC_replay data/stress_full.csv --engine v0  --speed 5000
- *                             stageC_replay data/stress_full.csv --engine mem --speed 5000 --led
- *   test20 check (3/5):       stageC_replay data/test20.csv --short 3 --long 5 --speed 0 --signals
- *                             -> must show exactly 1 BUY at trade 7, 0 SELL
+ * Examples (from the project root):
+ *   test20 check:   ./stageC/stageC_replay data/test20.csv --short 3 --long 5 --speed 0 --signals --engine v0
+ *   10 minutes at real speed with the LED (Pi):
+ *                   sudo taskset -c 2 ./stageC/stageC_replay data/stress_full.csv --speed 1 --minutes 10 --led
+ *   race (two terminals):
+ *                   ./stageC/stageC_replay data/stress_full.csv --engine v0  --speed 5000
+ *                   sudo ./stageC/stageC_replay data/stress_full.csv --engine mem --speed 5000 --led
  *
- * On the Pi, run with sudo for --led, and pin to one core: sudo taskset -c 2 ...
+ * If you stop it early with Ctrl-C, the LED keeps its last colour: reboot the
+ * Pi to give the LED back to the system (see the brief, section 7).
  */
 #include "../helper_function/timing.h"   /* must come first (see timing.h) */
 #include <stdio.h>
-#include <stdlib.h>                      /* atof, atoi */
+#include <stdlib.h>                      /* atoi, free */
 #include <string.h>                      /* strcmp */
-#include <signal.h>                      /* Ctrl-C handler (the C library one) */
 #include "../helper_function/led.h"
-#include "engine/feed.h"
-#include "engine/engine.h"
-#include "engine/rival.h"
-#include "engine/latency.h"
-#include "engine/display.h"
+#include "../stageB/engine/signal.h"     /* SIG_BUY, SIG_SELL, SIG_NONE */
+#include "../stageB/engine/sma.h"        /* MAX_WIN, the largest SMA window */
+#include "../stageB/engine/fixed.h"      /* PRICE_SCALE (cents)              */
+#include "engine/trades_malloc.h"        /* Leroi: Trade, load_trades_malloc() */
+#include "engine/v0_engine.h"            /* Version 0 (Stage A code)          */
+#include "engine/mem_engine.h"           /* fastest version (Stage B code)    */
+#include "engine/rival.h"                /* the rival bot                     */
 
-#define STATUS_EVERY_NS 100000000ULL     /* redraw the status bar every 100 ms */
-#define SLEEP_IF_MORE_NS 20000000ULL     /* sleep instead of spinning if > 20 ms early */
+/* ---- the two engines ---- */
+#define ENGINE_V0  0
+#define ENGINE_MEM 1
 
-/* ---- options from the command line ---- */
-typedef struct {
-    const char *path;
-    EngineKind  engine;
-    double      speed;          /* 0 = no clock, as fast as possible */
-    double      minutes;        /* market minutes to replay, 0 = all */
-    double      from_min;       /* skip this many market minutes first */
-    int         short_win, long_win;
-    double      rival_us;
-    int         use_led;
-    int         show_signals;   /* -1 = decide from speed */
-} Options;
+/* ---- terminal colours (ANSI escape codes) ---- */
+#define GREEN "\033[32m"
+#define RED   "\033[31m"
+#define RESET "\033[0m"
 
-/* set by the Ctrl-C handler so the loop can stop and clean up the LED */
-static volatile sig_atomic_t stop_requested = 0;
+/* ---- time units ---- */
+#define NS_PER_MS        1000000LL      /* nanoseconds in a millisecond */
+#define US_PER_MIN       60000000LL     /* microseconds in a minute     */
+#define STATUS_EVERY_NS  1000000000LL   /* one status line per second   */
+#define SLEEP_IF_MORE_NS 20000000LL     /* sleep if more than 20 ms early */
 
-static void on_ctrl_c(int sig_no) {
-    (void)sig_no;
-    stop_requested = 1;
+/* ---- options from the command line (filled in by read_options) ---- */
+char  *opt_path = NULL;          /* the CSV file                        */
+int    opt_engine = ENGINE_MEM;  /* ENGINE_V0 or ENGINE_MEM             */
+int    opt_speed = 1000;         /* 0 = no clock                        */
+int    opt_minutes = 0;          /* 0 = the whole file                  */
+int    opt_from_min = 0;         /* minutes to skip at the start        */
+int    opt_short = 35;           /* short SMA window                    */
+int    opt_long = 60;            /* long SMA window                     */
+double opt_rival_us = 1.0;       /* rival reaction time, microseconds   */
+int    opt_led = 0;              /* 1 = drive the LED                   */
+int    opt_signals = -1;         /* 1 = print signals, -1 = decide later */
+int    opt_quiet = 0;            /* 1 = summary only                    */
+
+/* colour the LED is showing now (SIG_NONE = off) */
+int led_colour = SIG_NONE;
+
+/* print_usage - how to run the program */
+void print_usage(char *program) {
+    printf("usage: %s <file.csv> [--engine v0|mem] [--speed X] [--minutes M]\n", program);
+    printf("          [--from-min M] [--short S] [--long L] [--rival R_us]\n");
+    printf("          [--led] [--signals | --quiet]\n");
 }
 
-static void usage(const char *prog) {
-    printf("usage: %s <file.csv> [--engine v0|fast|mem] [--speed X] [--minutes M]\n"
-           "          [--from-min M] [--short S] [--long L] [--rival R_us]\n"
-           "          [--led] [--signals | --quiet]\n", prog);
-}
-
-/* parse_options
- * What:    read argv into an Options struct
- * Returns: 1 if OK, 0 on a bad / missing argument
+/* read_options
+ * What:    copy the command-line arguments into the opt_ variables
+ * Steps:   look at argv[1], argv[2], ... one at a time. --led, --signals and
+ *          --quiet stand alone; every other option is followed by a value.
+ * Returns: 1 if OK, 0 if an argument is wrong or missing
  */
-static int parse_options(int argc, char *argv[], Options *o) {
-    int i;
+int read_options(int argc, char *argv[]) {
+    int i = 1;
 
-    o->path = NULL;
-    o->engine = ENGINE_MEM;
-    o->speed = 1000.0;
-    o->minutes = 0.0;
-    o->from_min = 0.0;
-    o->short_win = 35;
-    o->long_win = 60;
-    o->rival_us = 1.0;
-    o->use_led = 0;
-    o->show_signals = -1;
-
-    for (i = 1; i < argc; i++) {
-        const char *a = argv[i];
-        int has_value = (i + 1 < argc);
-
-        if (strcmp(a, "--engine") == 0 && has_value) {
-            if (!engine_parse_kind(argv[++i], &o->engine)) {
-                printf("unknown engine '%s' (use v0, fast or mem)\n", argv[i]);
+    while (i < argc) {
+        if (strcmp(argv[i], "--led") == 0) {
+            opt_led = 1;
+        } else if (strcmp(argv[i], "--signals") == 0) {
+            opt_signals = 1;
+        } else if (strcmp(argv[i], "--quiet") == 0) {
+            opt_signals = 0;
+            opt_quiet = 1;
+        } else if (argv[i][0] != '-' && opt_path == NULL) {
+            opt_path = argv[i];
+        } else if (i + 1 < argc) {
+            /* an option with a value: the value is argv[i + 1] */
+            if (strcmp(argv[i], "--engine") == 0) {
+                if (strcmp(argv[i + 1], "v0") == 0) {
+                    opt_engine = ENGINE_V0;
+                } else if (strcmp(argv[i + 1], "mem") == 0) {
+                    opt_engine = ENGINE_MEM;
+                } else {
+                    printf("unknown engine '%s' (use v0 or mem)\n", argv[i + 1]);
+                    return 0;
+                }
+            } else if (strcmp(argv[i], "--speed") == 0) {
+                opt_speed = atoi(argv[i + 1]);
+            } else if (strcmp(argv[i], "--minutes") == 0) {
+                opt_minutes = atoi(argv[i + 1]);
+            } else if (strcmp(argv[i], "--from-min") == 0) {
+                opt_from_min = atoi(argv[i + 1]);
+            } else if (strcmp(argv[i], "--short") == 0) {
+                opt_short = atoi(argv[i + 1]);
+            } else if (strcmp(argv[i], "--long") == 0) {
+                opt_long = atoi(argv[i + 1]);
+            } else if (strcmp(argv[i], "--rival") == 0) {
+                if (sscanf(argv[i + 1], "%lf", &opt_rival_us) != 1) {
+                    printf("bad rival time: %s\n", argv[i + 1]);
+                    return 0;
+                }
+            } else {
+                printf("bad argument: %s\n", argv[i]);
                 return 0;
             }
-        } else if (strcmp(a, "--speed") == 0 && has_value) {
-            o->speed = atof(argv[++i]);
-        } else if (strcmp(a, "--minutes") == 0 && has_value) {
-            o->minutes = atof(argv[++i]);
-        } else if (strcmp(a, "--from-min") == 0 && has_value) {
-            o->from_min = atof(argv[++i]);
-        } else if (strcmp(a, "--short") == 0 && has_value) {
-            o->short_win = atoi(argv[++i]);
-        } else if (strcmp(a, "--long") == 0 && has_value) {
-            o->long_win = atoi(argv[++i]);
-        } else if (strcmp(a, "--rival") == 0 && has_value) {
-            o->rival_us = atof(argv[++i]);
-        } else if (strcmp(a, "--led") == 0) {
-            o->use_led = 1;
-        } else if (strcmp(a, "--signals") == 0) {
-            o->show_signals = 1;
-        } else if (strcmp(a, "--quiet") == 0) {
-            o->show_signals = 0;
-        } else if (a[0] != '-' && o->path == NULL) {
-            o->path = a;
+            i++;                               /* skip over the value */
         } else {
-            printf("bad argument: %s\n", a);
+            printf("bad or incomplete argument: %s\n", argv[i]);
             return 0;
         }
+        i++;
     }
 
-    if (o->path == NULL) {
+    if (opt_path == NULL) {
         return 0;
     }
-    if (o->short_win < 1 || o->short_win >= o->long_win || o->long_win > MAX_WIN) {
+    if (opt_short < 1 || opt_short >= opt_long || opt_long > MAX_WIN) {
         printf("bad windows: need 1 <= short < long <= %d\n", MAX_WIN);
         return 0;
     }
-    if (o->speed < 0) {
-        printf("speed must be >= 0\n");
+    if (opt_speed < 0 || opt_minutes < 0 || opt_from_min < 0) {
+        printf("speed, minutes and from-min must not be negative\n");
         return 0;
     }
-    if (o->show_signals < 0) {
-        o->show_signals = (o->speed > 0 && o->speed <= 100);
+    /* by default, print each signal only at real speed up to 100x
+     * (at higher speeds there are too many to read) */
+    if (opt_signals == -1) {
+        if (opt_speed > 0 && opt_speed <= 100) {
+            opt_signals = 1;
+        } else {
+            opt_signals = 0;
+        }
     }
     return 1;
 }
 
-/* wait_until
- * What:    do nothing until the clock reaches target (ns)
- * Why spin: sleeping can overshoot by 1-15 ms (Windows timer tick), far
- *          longer than one trade. So we only sleep when we are more than
- *          20 ms early, and busy-poll the clock for the last part.
- *          (Real low-latency systems busy-poll for the same reason.)
+/* print_clock
+ * What:    print a trade's time of day as HH:MM:SS (UTC)
+ * Steps:   microseconds -> seconds -> seconds into the day -> hours, minutes, seconds
  */
-static void wait_until(uint64_t target) {
-    for (;;) {
-        uint64_t now = now_ns();
-        if (now >= target || stop_requested) {
-            return;
-        }
+void print_clock(long long time_us) {
+    long long day_sec = (time_us / 1000000LL) % 86400LL;
+
+    printf("%02lld:%02lld:%02lld", day_sec / 3600, (day_sec / 60) % 60, day_sec % 60);
+}
+
+/* show_signal
+ * What:    one line per signal: BUY in green, SELL in red
+ */
+void show_signal(int sig, long long trade_no, long long time_us, long long price_cents,
+                 long long latency_ns, long long pnl_cents) {
+    if (sig == SIG_BUY) {
+        printf(GREEN "BUY " RESET);
+    } else {
+        printf(RED "SELL" RESET);
+    }
+    printf("  ");
+    print_clock(time_us);
+    printf("  trade %-9lld  price %.2f  latency %lld ns  P&L %+.2f USDT\n", trade_no,
+           (double)price_cents / PRICE_SCALE, latency_ns, (double)pnl_cents / PRICE_SCALE);
+}
+
+/* show_status
+ * What:    one status line: market time, progress, lag (red once more than
+ *          1 ms behind the replay clock), P&L and the signal counts
+ */
+void show_status(char *name, long long time_us, long long done, long long total,
+                 long long lag_ns, long long max_lag_ns, Rival *rival, int buys, int sells) {
+    printf("[%-3s %dx] ", name, opt_speed);
+    print_clock(time_us);
+    printf("  %5.1f%%  lag ", 100.0 * done / total);
+    if (lag_ns > NS_PER_MS) {
+        printf(RED);
+    } else {
+        printf(GREEN);
+    }
+    printf("%9.3f ms" RESET " (max %.3f)  P&L %+10.2f  won %d/%d  B/S %d/%d\n",
+           (double)lag_ns / NS_PER_MS, (double)max_lag_ns / NS_PER_MS,
+           (double)rival->pnl / PRICE_SCALE, rival->wins, rival->wins + rival->losses,
+           buys, sells);
+}
+
+/* wait_until
+ * What:    do nothing until the clock reaches target (in ns)
+ * Why:     sleeping can overshoot by several milliseconds, far longer than
+ *          one trade, so we only sleep when we are more than 20 ms early and
+ *          keep checking the clock for the last part
+ */
+void wait_until(long long target) {
+    long long now = now_ns();
+
+    while (now < target) {
         if (target - now > SLEEP_IF_MORE_NS) {
             sleep_ms(10);
         }
+        now = now_ns();
     }
 }
 
 /* show_led
  * What:    green on for BUY, red on for SELL (the other one off)
- * Note:    called AFTER the latency is measured: writing to the LED's sysfs
- *          file is a system call that takes microseconds
+ * Note:    called AFTER the time is measured: changing the LED is a system
+ *          call that takes microseconds
  */
-static void show_led(int sig, int *current) {
-    if (sig == *current) {
+void show_led(int sig) {
+    if (sig == led_colour) {
         return;                         /* already showing this colour */
     }
     if (sig == SIG_BUY) {
@@ -183,192 +251,213 @@ static void show_led(int sig, int *current) {
         led_off(LED_GREEN);
         led_on(LED_RED);
     }
-    *current = sig;
+    led_colour = sig;
 }
 
 int main(int argc, char *argv[]) {
-    Options opt;
-    Feed feed;
-    Engine eng;
-    Rival rival, rival_proc;
-    LatStats proc_stats, lat_stats;
-    long long first, last, i, done = 0;
-    long long ts0, end_ts;
-    uint64_t t_load0, t_load1, start_ns, wall_end, next_status;
-    double max_lag_ms = 0.0, lag_ms = 0.0;
-    int led_state = SIG_NONE;
-    int printed_signals = 0;
+    Trade *list;                       /* Leroi's malloc'd array of trades   */
+    long long n;                       /* how many trades it holds           */
+    long long first, last, i;          /* replay trades first .. last-1      */
+    long long done = 0;                /* trades replayed so far             */
+    long long ts_first, ts_end;        /* market time of the first / end     */
+    long long load_start, load_end;    /* clock readings, ns                 */
+    long long start, wall_end, next_status, now;
+    long long release = 0, t_start, t_done;
+    long long proc_ns, lat_ns, lag_ns = 0, max_lag_ns = 0;
+    long long proc_worst = 0, lat_worst = 0;
+    double proc_total = 0.0, lat_total = 0.0;
+    long long price;
+    int sig, buys = 0, sells = 0;
+    double vwap = 0.0;
+    char *name;
+    Rival rival;                       /* reaction = latency (release -> decision) */
+    Rival rival_proc;                  /* reaction = processing time (the brief)   */
 
-    if (!parse_options(argc, argv, &opt)) {
-        usage(argv[0]);
+    if (!read_options(argc, argv)) {
+        print_usage(argv[0]);
         return 1;
     }
-    display_init();
-    signal(SIGINT, on_ctrl_c);
 
-    /* ---- LOAD: file -> memory (not part of the replay) ---- */
-    t_load0 = now_ns();
-    if (!feed_load(&feed, opt.path)) {
-        return 1;
+    /* ---- 1) LOAD: the whole file into Leroi's array (not part of the replay) ---- */
+    load_start = now_ns();
+    list = load_trades_malloc(opt_path, &n);
+    load_end = now_ns();
+    if (list == NULL) {
+        return 1;                      /* Leroi's loader already printed why */
     }
-    if (!engine_init(&eng, opt.engine, opt.short_win, opt.long_win, &feed)) {
-        feed_free(&feed);
-        return 1;
-    }
-    t_load1 = now_ns();
 
-    /* ---- pick the slice to replay: [first, last) ---- */
-    ts0 = feed.ts[0] + (long long)(opt.from_min * 60e6);
+    /* ---- 2) pick the trades to replay: first .. last-1 ---- */
+    ts_first = list[0].time + opt_from_min * US_PER_MIN;
     first = 0;
-    while (first < feed.n && feed.ts[first] < ts0) {
+    while (first < n && list[first].time < ts_first) {
         first++;
     }
-    if (first >= feed.n) {
+    if (first >= n) {
         printf("--from-min is past the end of the file\n");
-        engine_free(&eng);
-        feed_free(&feed);
+        free(list);
         return 1;
     }
-    ts0 = feed.ts[first];
-    end_ts = opt.minutes > 0 ? ts0 + (long long)(opt.minutes * 60e6) : -1;
-    last = feed.n;
-    if (end_ts >= 0) {
+    ts_first = list[first].time;
+    last = n;
+    if (opt_minutes > 0) {
+        ts_end = ts_first + opt_minutes * US_PER_MIN;
         last = first;
-        while (last < feed.n && feed.ts[last] < end_ts) {
+        while (last < n && list[last].time < ts_end) {
             last++;
         }
     }
 
-    if (!lat_init(&proc_stats, last - first) || !lat_init(&lat_stats, last - first)) {
-        printf("malloc failed for the latency samples\n");
-        lat_free(&proc_stats);
-        engine_free(&eng);
-        feed_free(&feed);
-        return 1;
+    /* ---- 3) get the engine ready ---- */
+    if (opt_engine == ENGINE_V0) {
+        name = "v0";
+        if (!v0_start(opt_path, opt_short, opt_long)) {
+            free(list);
+            return 1;
+        }
+        v0_skip(first);                /* move the file to trade "first" */
+    } else {
+        name = "mem";
+        mem_start(opt_short, opt_long);
     }
-    rival_init(&rival, opt.rival_us);
-    rival_init(&rival_proc, opt.rival_us);
+    rival_init(&rival, opt_rival_us);
+    rival_init(&rival_proc, opt_rival_us);
 
-    printf("Stage C replay  engine=%s  speed=%gx  windows=%d/%d  rival R=%g us\n",
-           engine_name(opt.engine), opt.speed, opt.short_win, opt.long_win, opt.rival_us);
+    printf("Stage C replay  engine=%s  speed=%dx  windows=%d/%d  rival R=%g us\n",
+           name, opt_speed, opt_short, opt_long, opt_rival_us);
     printf("file %s: %lld trades, replaying %lld (trades %lld..%lld), %.1f market minutes\n",
-           opt.path, feed.n, last - first, first + 1, last,
-           (feed.ts[last - 1] - ts0) / 60e6);
-    printf("load %.1f ms, memory: feed %.1f MB%s\n\n", (t_load1 - t_load0) / 1e6,
-           feed_memory(&feed) / 1e6,
-           opt.engine == ENGINE_MEM ? " + parsed trades" : "");
+           opt_path, n, last - first, first + 1, last,
+           (list[last - 1].time - ts_first) / 60e6);
+    printf("load %.1f ms (Leroi's load_trades_malloc), array %lld x %d B = %.1f MB\n\n",
+           (load_end - load_start) / 1e6, n, (int)sizeof(Trade),
+           (double)n * sizeof(Trade) / 1e6);
 
-    if (opt.use_led) {
+    if (opt_led) {
         led_init();
     }
 
-    /* ---- REPLAY ---- */
-    start_ns = now_ns();
-    if (opt.speed > 0) {
-        start_ns += 1000000ULL;            /* first trade released in 1 ms */
+    /* ---- 4) REPLAY ---- */
+    start = now_ns();
+    if (opt_speed > 0) {
+        start = start + NS_PER_MS;     /* first trade is released 1 ms from now */
     }
-    next_status = start_ns;
+    next_status = start + STATUS_EVERY_NS;
 
-    for (i = first; i < last && !stop_requested; i++) {
-        uint64_t release = 0, t_start, t_done, now;
-        long long price;
-        int sig;
-
-        /* 1) when is this trade released? (speed 0: right now) */
-        if (opt.speed > 0) {
-            release = start_ns + (uint64_t)((double)(feed.ts[i] - ts0) * 1000.0 / opt.speed);
+    for (i = first; i < last; i++) {
+        /* a) when is trade i released? (speed 0: straight away) */
+        if (opt_speed > 0) {
+            release = start + (list[i].time - ts_first) * 1000 / opt_speed;
             wait_until(release);
         }
 
-        /* 2) process it, timing only the engine */
+        /* b) process the trade, timing ONLY the engine */
         t_start = now_ns();
-        sig = engine_step(&eng, &feed, i, &price);
+        if (opt_engine == ENGINE_V0) {
+            sig = v0_step();
+        } else {
+            sig = mem_step(&list[i]);
+        }
         t_done = now_ns();
-        if (opt.speed <= 0) {
-            release = t_start;             /* no clock: latency = processing time */
+
+        /* c) processing time, latency and lag of this trade */
+        if (opt_speed == 0) {
+            release = t_start;         /* no clock: latency = processing time */
+        }
+        proc_ns = t_done - t_start;
+        lat_ns = t_done - release;
+        lag_ns = 0;
+        if (t_start > release) {
+            lag_ns = t_start - release;
+        }
+        proc_total = proc_total + proc_ns;
+        lat_total = lat_total + lat_ns;
+        if (proc_ns > proc_worst) {
+            proc_worst = proc_ns;
+        }
+        if (lat_ns > lat_worst) {
+            lat_worst = lat_ns;
+        }
+        if (lag_ns > max_lag_ns) {
+            max_lag_ns = lag_ns;
         }
 
-        lat_add(&proc_stats, t_done - t_start);
-        lat_add(&lat_stats, t_done - release);
-        lag_ms = (t_start > release) ? (t_start - release) / 1e6 : 0.0;
-        if (lag_ms > max_lag_ms) {
-            max_lag_ms = lag_ms;
+        /* d) the rival bot: first fill an order lost on the previous signal
+         *    at this trade's price, then react to this trade's signal */
+        if (opt_engine == ENGINE_V0) {
+            price = v0_price_cents();
+            buys = v0_buys();
+            sells = v0_sells();
+        } else {
+            price = mem_price_cents(&list[i]);
+            buys = mem_buys();
+            sells = mem_sells();
         }
-
-        /* 3) rival bot: fill a lost order at this trade's price, then react.
-         *    Two versions are kept:
-         *      rival      reaction = latency (release -> decision). Includes
-         *                 lag and queueing: a trade we have not reached yet
-         *                 cannot be reacted to. Shown live, used for the race.
-         *      rival_proc reaction = processing time only (the brief's rule). */
         rival_on_trade(&rival, price);
         rival_on_trade(&rival_proc, price);
         if (sig != SIG_NONE) {
-            rival_on_signal(&rival, sig, (long long)(t_done - release), price);
-            rival_on_signal(&rival_proc, sig, (long long)(t_done - t_start), price);
-            if (opt.use_led) {
-                show_led(sig, &led_state);
+            rival_on_signal(&rival, sig, lat_ns, price);
+            rival_on_signal(&rival_proc, sig, proc_ns, price);
+            if (opt_led) {
+                show_led(sig);
             }
-            if (opt.show_signals) {
-                display_signal(sig, i + 1, feed.ts[i], price / (double)PRICE_SCALE,
-                               (long long)(t_done - release), rival.pnl / (double)PRICE_SCALE);
-                printed_signals++;
+            if (opt_signals) {
+                show_signal(sig, i + 1, list[i].time, price, lat_ns, rival.pnl);
             }
         }
         done++;
 
-        /* 4) status bar (after timing, so printing is not counted as latency) */
+        /* e) a status line once a second (printing is not counted as latency) */
         now = now_ns();
-        if (now >= next_status) {
-            display_status(engine_name(opt.engine), opt.speed, feed.ts[i], done,
-                           last - first, lag_ms, max_lag_ms,
-                           rival.pnl / (double)PRICE_SCALE, rival.wins,
-                           rival.wins + rival.losses, engine_buys(&eng), engine_sells(&eng));
+        if (!opt_quiet && now >= next_status) {
+            show_status(name, list[i].time, done, last - first, lag_ns, max_lag_ns,
+                        &rival, buys, sells);
             next_status = now + STATUS_EVERY_NS;
         }
     }
     wall_end = now_ns();
-    display_status(engine_name(opt.engine), opt.speed, feed.ts[first + done - 1], done,
-                   last - first, lag_ms, max_lag_ms, rival.pnl / (double)PRICE_SCALE,
-                   rival.wins, rival.wins + rival.losses, engine_buys(&eng), engine_sells(&eng));
-    printf("\n");
 
-    if (opt.use_led) {
+    if (opt_led) {
         led_off(LED_GREEN);
         led_off(LED_RED);
         led_cleanup();
     }
 
-    /* ---- SUMMARY ---- */
-    printf("\n==== summary (engine=%s, speed=%gx) %s====\n", engine_name(opt.engine),
-           opt.speed, stop_requested ? "STOPPED EARLY " : "");
-    printf("trades replayed   %lld   market time %.1f s   wall time %.3f s\n", done,
-           (feed.ts[first + done - 1] - ts0) / 1e6, (wall_end - start_ns) / 1e9);
-    printf("throughput        %.0f trades/s (wall)\n", done / ((wall_end - start_ns) / 1e9));
-    printf("signals           %d BUY, %d SELL   final VWAP %.8f\n",
-           engine_buys(&eng), engine_sells(&eng), engine_vwap(&eng));
-    printf("processing time   avg %.1f ns   p50 %.0f ns   p99 %.0f ns   worst %llu ns\n",
-           lat_mean(&proc_stats), lat_percentile(&proc_stats, 50),
-           lat_percentile(&proc_stats, 99), (unsigned long long)proc_stats.max);
-    printf("latency (release->decision)\n"
-           "                  avg %.1f ns   p50 %.0f ns   p99 %.0f ns   worst %llu ns\n",
-           lat_mean(&lat_stats), lat_percentile(&lat_stats, 50),
-           lat_percentile(&lat_stats, 99), (unsigned long long)lat_stats.max);
-    printf("max lag behind replay clock  %.3f ms\n", max_lag_ms);
-    printf("rival bot (R=%g us)%s\n", opt.rival_us,
-           rival.holding ? "   (1 BTC still held at the end, not counted)" : "");
-    printf("  reaction = latency          P&L %+.2f USDT over %d round trips, won %d / lost %d\n",
-           rival.pnl / (double)PRICE_SCALE, rival.round_trips, rival.wins, rival.losses);
-    printf("  reaction = processing time  P&L %+.2f USDT over %d round trips, won %d / lost %d\n",
-           rival_proc.pnl / (double)PRICE_SCALE, rival_proc.round_trips,
-           rival_proc.wins, rival_proc.losses);
-    if (printed_signals == 0 && !opt.show_signals) {
-        printf("(per-signal lines were off; use --signals to show them)\n");
+    /* ---- 5) results from the engine ---- */
+    if (opt_engine == ENGINE_V0) {
+        buys = v0_buys();
+        sells = v0_sells();
+        vwap = v0_vwap();
+        v0_stop();
+    } else {
+        buys = mem_buys();
+        sells = mem_sells();
+        vwap = mem_vwap();
+    }
+    if (!opt_quiet) {
+        show_status(name, list[first + done - 1].time, done, last - first, lag_ns,
+                    max_lag_ns, &rival, buys, sells);
     }
 
-    lat_free(&proc_stats);
-    lat_free(&lat_stats);
-    engine_free(&eng);
-    feed_free(&feed);
+    /* ---- 6) SUMMARY ---- */
+    printf("\n==== summary (engine=%s, speed=%dx) ====\n", name, opt_speed);
+    printf("trades replayed   %lld   market time %.1f s   wall time %.3f s\n", done,
+           (list[first + done - 1].time - ts_first) / 1e6, (wall_end - start) / 1e9);
+    printf("throughput        %.0f trades/s (wall)\n", done / ((wall_end - start) / 1e9));
+    printf("signals           %d BUY, %d SELL   final VWAP %.8f\n", buys, sells, vwap);
+    printf("processing time   avg %.1f ns   worst %lld ns\n", proc_total / done, proc_worst);
+    printf("latency (release->decision)\n");
+    printf("                  avg %.1f ns   worst %lld ns\n", lat_total / done, lat_worst);
+    printf("max lag behind replay clock  %.3f ms\n", (double)max_lag_ns / NS_PER_MS);
+    printf("rival bot (R=%g us)", opt_rival_us);
+    if (rival.holding) {
+        printf("   (1 BTC still held at the end, not counted)");
+    }
+    printf("\n");
+    printf("  reaction = latency          P&L %+.2f USDT over %d round trips, won %d / lost %d\n",
+           (double)rival.pnl / PRICE_SCALE, rival.round_trips, rival.wins, rival.losses);
+    printf("  reaction = processing time  P&L %+.2f USDT over %d round trips, won %d / lost %d\n",
+           (double)rival_proc.pnl / PRICE_SCALE, rival_proc.round_trips,
+           rival_proc.wins, rival_proc.losses);
+
+    free(list);                        /* give Leroi's array back */
     return 0;
 }

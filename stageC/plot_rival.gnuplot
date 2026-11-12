@@ -13,13 +13,12 @@ set key top left
 
 # top: money lost = P&L(fastest) - P&L(Version 0)
 set ylabel "Money lost (USDT)"
-plot "stageC/rival_sweep.dat" using 1:5 with linespoints lw 2 pt 7 title "money lost = P&L(mem) - P&L(v0)"
+plot "stageC/rival_sweep.dat" using 1:4 with linespoints lw 2 pt 7 title "money lost = P&L(mem) - P&L(v0)" noenhanced
 
 # bottom: how often each version beats the rival
 set ylabel "Signals won vs rival (%)"
 set yrange [0:105]
-plot "stageC/rival_sweep.dat" using 1:6 with linespoints lw 2 title "v0", \
-     ""                       using 1:7 with linespoints lw 2 title "fast", \
-     ""                       using 1:8 with linespoints lw 2 title "mem (fastest)"
+plot "stageC/rival_sweep.dat" using 1:5 with linespoints lw 2 title "v0 (Version 0)", \
+     ""                       using 1:6 with linespoints lw 2 title "mem (fastest)"
 
 unset multiplot

@@ -48,18 +48,19 @@ HELPERS = helper_function/timing.h helper_function/led.h
 # ---- stageC ----
 # stageC_malloc = Stage B in-memory engine with a malloc'd array (Leroi)
 # stageC_replay = real-time replay, LED / coloured signals, latency, lag, live P&L
-# stageC_rival  = rival bot P&L for v0 / fast / mem and the R sweep (rival_sweep.dat)
+# stageC_rival  = rival bot P&L for v0 / mem and the R sweep (rival_sweep.dat)
 STAGEC_MALLOC = stageC/stageC_malloc$(EXE)
 STAGEC_REPLAY = stageC/stageC_replay$(EXE)
 STAGEC_RIVAL  = stageC/stageC_rival$(EXE)
-STAGEC_TEST   = stageC/test_parser$(EXE)
-STAGEC = $(STAGEC_MALLOC) $(STAGEC_REPLAY) $(STAGEC_RIVAL) $(STAGEC_TEST)
+STAGEC = $(STAGEC_MALLOC) $(STAGEC_REPLAY) $(STAGEC_RIVAL)
 
-# Stage B engine modules: double (Version 0 maths) and fixed-point (fastest)
-ENGINE_B_DBL = stageB/engine/vwap.c stageB/engine/ohlc.c stageB/engine/sma.c stageB/engine/sma_naive.c stageB/engine/signal.c
-ENGINE_B_FX  = stageB/engine/vwap_fx.c stageB/engine/ohlc_fx.c stageB/engine/sma_fx.c stageB/engine/signal_fx.c
-ENGINE_C     = stageC/engine/feed.c stageC/engine/fast_parse.c stageC/engine/engine.c stageC/engine/rival.c stageC/engine/latency.c stageC/engine/display.c
-ENGINE_C_H   = $(wildcard stageC/engine/*.h) $(wildcard stageB/engine/*.h) $(HELPERS)
+# The replay and rival bot only call code from earlier stages:
+#   Version 0 = helper library (next_trade) + Stage A modules (naive SMA, double)
+#   mem       = Leroi's malloc loader + Leroi's Stage B fixed-point modules
+ENGINE_A_V0 = stageA/engine/vwap.c stageA/engine/ohlc.c stageA/engine/sma.c stageA/engine/signal.c
+ENGINE_B_FX = stageB/engine/vwap_fx.c stageB/engine/ohlc_fx.c stageB/engine/sma_fx.c stageB/engine/signal_fx.c
+ENGINE_C    = stageC/engine/trades_malloc.c stageC/engine/v0_engine.c stageC/engine/mem_engine.c stageC/engine/rival.c helper_function/trade_io.c
+ENGINE_C_H  = $(wildcard stageC/engine/*.h) $(wildcard stageB/engine/*.h) $(wildcard stageA/engine/*.h) $(HELPERS) helper_function/trade_io.h
 
 # extra flags for Stage C, e.g. make stageC CFLAGS_C="-O2 -mcpu=cortex-a76" on the Pi
 CFLAGS_C = -O2 -Wall
@@ -70,11 +71,11 @@ ASM_TAG = x86-64
 else
 ASM_TAG = $(shell uname -m)
 endif
-ASM_SRC = stageC/engine/engine.c stageB/engine/sma_fx.c stageB/engine/signal_fx.c stageB/engine/vwap_fx.c stageB/engine/ohlc_fx.c
+ASM_SRC = stageC/engine/mem_engine.c stageB/engine/sma_fx.c stageB/engine/signal_fx.c stageB/engine/vwap_fx.c stageB/engine/ohlc_fx.c
 
 ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC)
 
-.PHONY: all stage0 stageA stageC test_parser asm clean
+.PHONY: all stage0 stageA stageC asm clean
 
 all: stage0 stageA stageC
 
@@ -111,17 +112,11 @@ stageC: $(STAGEC)
 $(STAGEC_MALLOC): stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageC/engine/trades_malloc.h $(TRADE_IO)
 	$(CC) $(CFLAGS_C) stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageB/engine/vwap.c stageB/engine/ohlc.c stageB/engine/sma.c stageB/engine/signal.c stageB/engine/report.c helper_function/trade_io.c -o $@
 
-$(STAGEC_REPLAY): stageC/stageC_replay.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) -o $@
+$(STAGEC_REPLAY): stageC/stageC_replay.c $(ENGINE_C) $(ENGINE_A_V0) $(ENGINE_B_FX) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C) $(ENGINE_A_V0) $(ENGINE_B_FX) -o $@
 
-$(STAGEC_RIVAL): stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) -lm -o $@
-
-# parser check: ./stageC/test_parser data/stress_full.csv
-test_parser: $(STAGEC_TEST)
-
-$(STAGEC_TEST): stageC/test_parser.c stageC/engine/feed.c stageC/engine/fast_parse.c $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/test_parser.c stageC/engine/feed.c stageC/engine/fast_parse.c -o $@
+$(STAGEC_RIVAL): stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_A_V0) $(ENGINE_B_FX) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_A_V0) $(ENGINE_B_FX) -lm -o $@
 
 # gcc -S -O2 for each fixed-point kernel -> stageC/asm/<name>_<machine>_O2.s
 asm:
