@@ -43,3 +43,7 @@ __pycache__/
 # Personal scratch work and local data (not for the group repo)
 codespace/
 data/
+
+# ladder executables built by "make ladder" (Linux / Pi names; .exe is covered above)
+bin/*
+!bin/.gitkeep

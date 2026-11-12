@@ -8,7 +8,7 @@
  * One dataset per run, picked by the first argument:
  *   test20 - data/group_data/test20.csv, short=3,  long=5,  full table (correctness)
  *   dev    - data/group_data/dev_1M.csv, short=35, long=60, summary only
- *   stress - data/stress_full.csv,       short=35, long=60, summary only (benchmark)
+ *   stress - data/group_data/stress_full.csv, short=35, long=60, summary only (benchmark)
  *
  * No timing inside: the group times every ladder version from outside with
  * benchmark/benchmark.c (now_ns() around the whole program), e.g. on "stress".
@@ -53,7 +53,7 @@
 /* ---- file paths (relative to the project root) ---- */
 #define TEST20_PATH "data/group_data/test20.csv"
 #define DEV_PATH    "data/group_data/dev_1M.csv"
-#define STRESS_PATH "data/stress_full.csv"
+#define STRESS_PATH "data/group_data/stress_full.csv"
 
 /* ---- SMA windows ---- */
 #define TEST_SHORT 3
