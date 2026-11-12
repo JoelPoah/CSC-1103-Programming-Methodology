@@ -1,11 +1,12 @@
-# Makefile - builds stage0 and stageA (run from the project root)
+# Makefile - builds stage0, stageA, stageC and the src/ ladder (run from the project root)
 #
-#   make            build everything (stage0 + stageA)
+#   make            build everything (stage0 + stageA + stageC + ladder)
 #   make stage0     build stage0 only (question a + question b)
 #   make stageA     build stageA only (stageA_manual = Version 0, stageA_plot)
 #   make plotA      build stageA_plot and run it (writes stageA/signals.dat + signals.png)
 #   make stageC     build stageC only (stageC_malloc, stageC_replay, stageC_rival)
 #   make asm        write the -O2 assembly of the fixed-point kernels to stageC/asm/
+#   make ladder     build every version V0-V7 from src/ into bin/
 #   make clean      delete all built executables
 #
 # Works with GNU make on Windows (MinGW gcc adds .exe automatically), Linux and macOS.
@@ -72,11 +73,36 @@ ASM_TAG = $(shell uname -m)
 endif
 ASM_SRC = stageC/engine/engine.c stageB/engine/sma_fx.c stageB/engine/signal_fx.c stageB/engine/vwap_fx.c stageB/engine/ohlc_fx.c
 
-ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC)
+# ---- ladder (src/) ----
+# Every version is built from src/ with the same flags; only the files linked change.
+# V0  main_stageA        helper library + naive SMA
+# V1  main_stageAplus    own read_trade(), fgets + sscanf
+# V2  main_stageAplus    own read_trade(), digit-by-digit parser
+# V3  main_stageB_inmem  all trades in a global array, naive SMA
+# V4  main_stageB_inmem  same, running-sum SMA
+# V5  main_stageB_fixed  fixed-point prices, fixed-size global array
+# V6  main_stageB_fixed  fixed-point prices, malloc'd array (Stage C)
+# V7  main_stageB_fixed  same array, whole file read with one fread (Lucas's feed)
+LADDER_V0 = bin/v0_stageA_naive_sma$(EXE)
+LADDER_V1 = bin/v1_stageAplus_own_reader$(EXE)
+LADDER_V2 = bin/v2_stageAplus_fast_parser$(EXE)
+LADDER_V3 = bin/v3_stageB_in_memory$(EXE)
+LADDER_V4 = bin/v4_stageB_running_sma$(EXE)
+LADDER_V5 = bin/v5_stageB_fixed_point$(EXE)
+LADDER_V6 = bin/v6_stageC_malloc$(EXE)
+LADDER_V7 = bin/v7_stageC_fread$(EXE)
+LADDER = $(LADDER_V0) $(LADDER_V1) $(LADDER_V2) $(LADDER_V3) $(LADDER_V4) $(LADDER_V5) $(LADDER_V6) $(LADDER_V7)
 
-.PHONY: all stage0 stageA plotA stageC test_parser asm clean
+CFLAGS_L   = -O2 -Wall
+SRC_H      = $(wildcard src/*.h src/*/*.h) $(HELPERS)
+SRC_ENGINE = src/engine/vwap.c src/engine/ohlc.c src/engine/signal.c src/engine/report.c
+SRC_FX     = src/engine_fx/vwap_fx.c src/engine_fx/ohlc_fx.c src/engine_fx/sma_fx.c src/engine_fx/signal_fx.c src/engine/report.c
 
-all: stage0 stageA stageC
+ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER)
+
+.PHONY: all stage0 stageA plotA stageC test_parser asm ladder clean
+
+all: stage0 stageA stageC ladder
 
 stage0: $(STAGE0_A) $(STAGE0_B)
 
@@ -126,6 +152,32 @@ $(STAGEC_TEST): stageC/test_parser.c stageC/engine/feed.c stageC/engine/fast_par
 # gcc -S -O2 for each fixed-point kernel -> stageC/asm/<name>_<machine>_O2.s
 asm:
 	$(foreach f,$(ASM_SRC),$(CC) -S -O2 -fno-asynchronous-unwind-tables -fno-ident $(f) -o stageC/asm/$(basename $(notdir $(f)))_$(ASM_TAG)_O2.s &&) echo assembly written to stageC/asm/
+
+ladder: $(LADDER)
+
+$(LADDER_V0): src/v0_main_stageA.c $(SRC_ENGINE) src/engine/v0-v3_sma_naive.c $(SRC_H) $(TRADE_IO)
+	$(CC) $(CFLAGS_L) src/v0_main_stageA.c $(SRC_ENGINE) src/engine/v0-v3_sma_naive.c helper_function/trade_io.c -o $@
+
+$(LADDER_V1): src/v1-v2_main_stageAplus.c src/reader/v1_read_trade_sscanf.c $(SRC_ENGINE) src/engine/v0-v3_sma_naive.c $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v1-v2_main_stageAplus.c src/reader/v1_read_trade_sscanf.c $(SRC_ENGINE) src/engine/v0-v3_sma_naive.c -o $@
+
+$(LADDER_V2): src/v1-v2_main_stageAplus.c src/reader/v2-v4_read_trade_fast.c $(SRC_ENGINE) src/engine/v0-v3_sma_naive.c $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v1-v2_main_stageAplus.c src/reader/v2-v4_read_trade_fast.c $(SRC_ENGINE) src/engine/v0-v3_sma_naive.c -o $@
+
+$(LADDER_V3): src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/v2-v4_read_trade_fast.c $(SRC_ENGINE) src/engine/v0-v3_sma_naive.c $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/v2-v4_read_trade_fast.c $(SRC_ENGINE) src/engine/v0-v3_sma_naive.c -o $@
+
+$(LADDER_V4): src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/v2-v4_read_trade_fast.c $(SRC_ENGINE) src/engine/v4_sma_running.c $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/v2-v4_read_trade_fast.c $(SRC_ENGINE) src/engine/v4_sma_running.c -o $@
+
+$(LADDER_V5): src/v5-v7_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v7_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) -o $@
+
+$(LADDER_V6): src/v5-v7_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v7_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) -o $@
+
+$(LADDER_V7): src/v5-v7_main_stageB_fixed.c src/store/v7_trades_fx_fread.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v7_main_stageB_fixed.c src/store/v7_trades_fx_fread.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) -o $@
 
 clean:
 ifeq ($(OS),Windows_NT)
