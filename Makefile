@@ -6,7 +6,7 @@
 #   make plotA      build stageA_plot and run it (writes stageA/signals.dat + signals.png)
 #   make stageC     build stageC only (stageC_malloc, stageC_replay, stageC_rival)
 #   make asm        write the -O2 assembly of the fixed-point kernels to stageC/asm/
-#   make ladder     build every version V0-V7 from src/ into bin/
+#   make ladder     build every version V0-V7 from src/ into bin/ (+ V8 on the Pi)
 #   make benchmark  build the -O0..-O3 benchmark tool (benchmark/benchmark.c)
 #   make clean      delete all built executables
 #
@@ -87,6 +87,7 @@ ASM_SRC = stageC/engine/engine.c stageB/engine/sma_fx.c stageB/engine/signal_fx.
 # V5  main_stageB_fixed  fixed-point prices, fixed-size global array
 # V6  main_stageB_fixed  fixed-point prices, malloc'd array (Stage C)
 # V7  main_stageB_fixed  same array, whole file read with one fread (Lucas's feed)
+# V8  main_stageB_fixed  V7 + hand-written AArch64 OHLC (Yong Sheng), Raspberry Pi only
 LADDER_V0 = bin/v0_stageA_naive_sma$(EXE)
 LADDER_V1 = bin/v1_stageAplus_own_reader$(EXE)
 LADDER_V2 = bin/v2_stageAplus_fast_parser$(EXE)
@@ -95,12 +96,19 @@ LADDER_V4 = bin/v4_stageB_running_sma$(EXE)
 LADDER_V5 = bin/v5_stageB_fixed_point$(EXE)
 LADDER_V6 = bin/v6_stageC_malloc$(EXE)
 LADDER_V7 = bin/v7_stageC_fread$(EXE)
+LADDER_V8 = bin/v8_stageC_asm_ohlc$(EXE)
 LADDER = $(LADDER_V0) $(LADDER_V1) $(LADDER_V2) $(LADDER_V3) $(LADDER_V4) $(LADDER_V5) $(LADDER_V6) $(LADDER_V7)
 
 CFLAGS_L   = -O2 -Wall
 SRC_H      = $(wildcard src/*.h src/*/*.h) $(HELPERS)
 SRC_ENGINE = src/engine/vwap.c src/engine/ohlc.c src/engine/signal.c src/engine/report.c
-SRC_FX     = src/engine_fx/vwap_fx.c src/engine_fx/ohlc_fx.c src/engine_fx/sma_fx.c src/engine_fx/signal_fx.c src/engine/report.c
+SRC_FX_CORE = src/engine_fx/vwap_fx.c src/engine_fx/sma_fx.c src/engine_fx/signal_fx.c src/engine/report.c
+SRC_FX     = $(SRC_FX_CORE) src/engine_fx/v5-v7_ohlc_fx.c
+
+# V8 is AArch64 assembly, so it is only part of the ladder on the Pi (uname -m = aarch64)
+ifeq ($(ASM_TAG),aarch64)
+LADDER += $(LADDER_V8)
+endif
 
 ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER) $(BENCHMARK)
 
@@ -174,14 +182,17 @@ $(LADDER_V3): src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/
 $(LADDER_V4): src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/v2-v4_read_trade_fast.c $(SRC_ENGINE) src/engine/v4_sma_running.c $(SRC_H)
 	$(CC) $(CFLAGS_L) src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/v2-v4_read_trade_fast.c $(SRC_ENGINE) src/engine/v4_sma_running.c -o $@
 
-$(LADDER_V5): src/v5-v7_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) $(SRC_H)
-	$(CC) $(CFLAGS_L) src/v5-v7_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) -o $@
+$(LADDER_V5): src/v5-v8_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) -o $@
 
-$(LADDER_V6): src/v5-v7_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) $(SRC_H)
-	$(CC) $(CFLAGS_L) src/v5-v7_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) -o $@
+$(LADDER_V6): src/v5-v8_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) -o $@
 
-$(LADDER_V7): src/v5-v7_main_stageB_fixed.c src/store/v7_trades_fx_fread.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) $(SRC_H)
-	$(CC) $(CFLAGS_L) src/v5-v7_main_stageB_fixed.c src/store/v7_trades_fx_fread.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) -o $@
+$(LADDER_V7): src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) -o $@
+
+$(LADDER_V8): src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c src/engine_asm/v8_ohlc_fx.s $(SRC_FX_CORE) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX_CORE) src/engine_asm/v8_ohlc_fx.s -o $@
 
 benchmark: $(BENCHMARK)
 

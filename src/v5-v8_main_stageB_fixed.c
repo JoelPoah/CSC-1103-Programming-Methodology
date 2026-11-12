@@ -1,5 +1,5 @@
 /*
- * v5-v7_main_stageB_fixed.c - V5, V6, V7: in-memory engine with FIXED-POINT prices (Leroi)
+ * v5-v8_main_stageB_fixed.c - V5 to V8: in-memory engine with FIXED-POINT prices (Leroi)
  *
  * From stageB/stageB_fixed.c. Same steps as V4 (load the file into an array,
  * then process the array with a running-sum SMA), but every price and
@@ -7,23 +7,26 @@
  *   price -> cents (x 100), qty -> x 100000   (see engine_fx/fixed.h)
  * Doubles are only used to PRINT results; all the maths in the loop is
  * whole-number maths. Trades are parsed straight to fixed-point
- * (reader/v5-v7_read_trade_fx.c, Lucas), so no double is made while loading either.
+ * (reader/v5-v8_read_trade_fx.c, Lucas), so no double is made while loading either.
  *
  * One source file, several versions, picked at link time (same store/trades_fx.h):
  *   V5: link store/v5_trades_fx_array.c   (fixed-size global array)
  *   V6: link store/v6_trades_fx_malloc.c  (malloc'd array sized to the file, Stage C)
- *   V7: link store/v7_trades_fx_fread.c   (same array, whole file read with
+ *   V7: link store/v7-v8_trades_fx_fread.c   (same array, whole file read with
  *       one fread, Lucas's Stage C feed)
- *   (V8 would be the engine_fx kernels in AArch64 assembly, engine_asm/, not written yet)
+ *   V8: V7 + engine_asm/v8_ohlc_fx.s instead of engine_fx/v5-v7_ohlc_fx.c
+ *       (Yong Sheng's hand-written AArch64 OHLC, Raspberry Pi only)
  *
  * Build (from the project root):
  *   make ladder
- *   or: gcc -O2 -Wall src/v5-v7_main_stageB_fixed.c src/store/v5_trades_fx_array.c
- *       src/reader/v5-v7_read_trade_fx.c src/engine_fx/vwap_fx.c src/engine_fx/ohlc_fx.c
+ *   or: gcc -O2 -Wall src/v5-v8_main_stageB_fixed.c src/store/v5_trades_fx_array.c
+ *       src/reader/v5-v8_read_trade_fx.c src/engine_fx/vwap_fx.c src/engine_fx/v5-v7_ohlc_fx.c
  *       src/engine_fx/sma_fx.c src/engine_fx/signal_fx.c src/engine/report.c
  *       -o bin/v5_stageB_fixed_point
  *   (V6: v6_trades_fx_malloc.c instead of v5_trades_fx_array.c, -o bin/v6_stageC_malloc)
- *   (V7: v7_trades_fx_fread.c instead of v5_trades_fx_array.c, -o bin/v7_stageC_fread)
+ *   (V7: v7-v8_trades_fx_fread.c instead of v5_trades_fx_array.c, -o bin/v7_stageC_fread)
+ *   (V8, on the Pi: V7 with src/engine_asm/v8_ohlc_fx.s instead of
+ *    src/engine_fx/v5-v7_ohlc_fx.c, -o bin/v8_stageC_asm_ohlc)
  * Run (from the project root):
  *   ./bin/v5_stageB_fixed_point        test20, dev_1M and stress_full
  *   ./bin/v6_stageC_malloc dev         test20 and dev_1M only (for valgrind,

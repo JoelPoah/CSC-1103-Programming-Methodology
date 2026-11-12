@@ -1,5 +1,5 @@
 /*
- * v5-v7_read_trade_fx.c - CSV line -> TradeFx without sscanf (Lucas, see read_trade_fx.h)
+ * v5-v8_read_trade_fx.c - CSV line -> TradeFx without sscanf (Lucas, see read_trade_fx.h)
  *
  * Adapted from Jaren's Stage A+ parser (stageA_plus/stageA_plus.c): walk the
  * line one character at a time and build each number from its digits.
