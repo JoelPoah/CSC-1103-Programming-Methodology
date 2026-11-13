@@ -21,9 +21,10 @@ from engine.crossover import SIG_BUY, SIG_SELL
 
 class SignalPlot:
 
-    def __init__(self, dat_path, png_path):
+    def __init__(self, dat_path, png_path, title=None):
         self.dat_path = dat_path
         self.png_path = png_path
+        self.title = title                # None = settings.PLOT_TITLE
 
         # one entry per line of signals.dat
         self.trade = []
@@ -76,7 +77,10 @@ class SignalPlot:
         ax.scatter(sell_x, sell_y, marker="v", s=settings.MARKER_SIZE,
                    color=settings.SELL_COLOUR, zorder=5, label="SELL")
 
-        ax.set_title(settings.PLOT_TITLE)
+        title = self.title
+        if title is None:
+            title = settings.PLOT_TITLE
+        ax.set_title(title)
         ax.set_xlabel("trade number")
         ax.set_ylabel("price (USDT)")
         ax.ticklabel_format(axis="y", useOffset=False)    # show real prices, not "+7.6e4"

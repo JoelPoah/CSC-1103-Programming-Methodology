@@ -17,8 +17,10 @@ DEV_PATH = "data/dev_1M.csv"
 STRESS_PATH = "data/stress_full.csv"
 
 # ---- output files for the plot ----
-SIGNALS_DAT = "Python/signals.dat"
+SIGNALS_DAT = "Python/signals.dat"                 # stageA_Python.py (pure Python)
 SIGNALS_PNG = "Python/signals.png"
+SIGNALS_DAT_NUMPY = "Python/signals_numpy.dat"     # stageA_Python_numpy.py
+SIGNALS_PNG_NUMPY = "Python/signals_numpy.png"
 
 # ---- SMA windows ----
 TEST_SHORT = 3       # test20.csv always uses 3 and 5 (same for every group)
@@ -39,6 +41,7 @@ BENCH_RUNS = 5             # EDIT: the brief asks for at least 5 runs, we print 
 
 # ---- how signals.png looks ----
 PLOT_TITLE = "Stage A (Python): SMA crossover signals"
+PLOT_TITLE_NUMPY = "Stage A (Python + NumPy): SMA crossover signals"
 PLOT_WIDTH = 14            # EDIT: inches, times PLOT_DPI = pixels (14 x 100 = 1400 px like the gnuplot one)
 PLOT_HEIGHT = 7
 PLOT_DPI = 100
