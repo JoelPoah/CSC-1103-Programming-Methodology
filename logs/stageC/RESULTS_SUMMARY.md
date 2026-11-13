@@ -1,8 +1,8 @@
 # Stage C results summary (Raspberry Pi 5)
 
-Measured by Lucas (Group 06) on 12–13 Nov 2026, following `stageC/BENCHMARK_INSTRUCTIONS.md`.
-Every number below is the **median of 5 runs** unless it says otherwise. The raw logs are the
-`.txt` files in this folder.
+Measured by Lucas (Group 06) on 13–14 Nov 2026 with commit `b761240`, following
+`stageC/BENCHMARK_INSTRUCTIONS.md`. Every number below is the **median of 5 runs** unless it
+says otherwise. The raw logs are the `.txt` files in this folder.
 
 ## Machine
 
@@ -17,16 +17,19 @@ Every number below is the **median of 5 runs** unless it says otherwise. The raw
 | Flags | `make stageC CFLAGS_C="-O2 -Wall -mcpu=cortex-a76"` (builds with no warnings) |
 | CPU governor | `performance` on all 4 cores for every timed run (default was `ondemand`) |
 | Pinning | `taskset -c 2` (core 2) |
-| Throttling | `vcgencmd get_throttled` = `0x0` after every run; 47–58 °C |
+| Throttling | `vcgencmd get_throttled` = `0x0` after every run; 48–58 °C |
 | Data | `stress_full.csv`, 8,928,944 trades (24 h); SMA windows 35 / 60 |
 
-Engines (see `stageC/README.md`):
-- **v0** = Version 0: `next_trade()` reads each line from the file (fgets + sscanf) + Stage A
-  modules (double, naive SMA).
-- **mem** = fastest: Leroi's `load_trades_malloc()` array + Leroi's Stage B fixed-point modules.
+Engines (see `stageC/README.md`). Both use Stage B's modules, copied into `stageC/engine/`:
+- **v0** = Version 0: `next_trade()` reads each line from the file (fgets + sscanf), then
+  `vwap`, `ohlc`, the naive `sma_naive` and `signal` (double prices).
+- **mem** = fastest portable version (same as ladder V7): `load_trades_fx()` reads the file
+  with one fread into a malloc'd array of cents, then `vwap_fx`, `ohlc_fx`, `sma_fx` and
+  `signal_fx`.
 
 Correctness checks passed first: test20 gives 1 BUY at trade 7, 0 SELL, VWAP 76592.17322550
-(both engines); dev_1M gives v0 2509 / 2469 and mem 2553 / 2469.
+(both engines, and the `_malloc` and `_asm` variants); dev_1M gives v0 2509 / 2469 and
+mem 2553 / 2469 (also for `_asm`).
 
 ## Replay: latency (median of 5 runs)
 
@@ -37,15 +40,15 @@ Correctness checks passed first: test20 gives 1 BUY at trade 7, 0 SELL, VWAP 765
 
 | Engine | Speed | Trades | Processing avg | Avg latency | Worst latency | Max lag | P&L, reaction = latency (USDT) | P&L, reaction = processing (USDT) |
 |---|---|---|---|---|---|---|---|---|
-| v0  | 1× (10 min) | 51,072    | 1315.0 ns | 25.64 µs | 0.325 ms | 0.323 ms | +1,099.13   | +1,099.13   |
-| v0  | 100×        | 8,928,944 | 1212.4 ns | 42.42 µs | 2.795 ms | 2.794 ms | +207,375.30 | +207,375.30 |
-| v0  | 1000×       | 8,928,944 | 1207.0 ns | 225.69 µs | 9.768 ms | 9.767 ms | +207,375.30 | +207,375.30 |
-| mem | 1× (10 min) | 51,072    | 67.3 ns   | 3.25 µs  | 0.044 ms | 0.044 ms | +1,099.86   | +1,106.68   |
-| mem | 100×        | 8,928,944 | 58.1 ns   | 3.67 µs  | 0.363 ms | 0.363 ms | +207,710.81 | +209,214.09 |
-| mem | 1000×       | 8,928,944 | 58.9 ns   | 6.28 µs  | 0.382 ms | 0.382 ms | +207,568.01 | +209,214.09 |
+| v0  | 1× (10 min) | 51,072    | 1301.4 ns | 25.13 µs  | 0.323 ms | 0.322 ms | +1,099.13   | +1,099.13   |
+| v0  | 100×        | 8,928,944 | 1195.8 ns | 41.63 µs  | 2.763 ms | 2.761 ms | +207,375.30 | +207,375.30 |
+| v0  | 1000×       | 8,928,944 | 1193.0 ns | 220.11 µs | 9.591 ms | 9.590 ms | +207,375.30 | +207,375.30 |
+| mem | 1× (10 min) | 51,072    | 67.0 ns   | 3.26 µs   | 0.042 ms | 0.042 ms | +1,099.85   | +1,106.68   |
+| mem | 100×        | 8,928,944 | 51.8 ns   | 3.52 µs   | 0.355 ms | 0.355 ms | +207,719.06 | +209,214.09 |
+| mem | 1000×       | 8,928,944 | 50.6 ns   | 5.84 µs   | 0.353 ms | 0.353 ms | +207,587.28 | +209,214.08 |
 
-Worst single processing time (median): v0 20.0 µs / 28.1 µs / 35.4 µs and mem 1.7 µs /
-11.0 µs / 13.3 µs (1× / 100× / 1000×).
+Worst single processing time (median): v0 21.4 µs / 24.1 µs / 95.4 µs and mem 1.9 µs /
+11.4 µs / 11.2 µs (1× / 100× / 1000×).
 
 Every run finished on schedule: wall time 599.655 s at 1×, 863.998 s at 100× and 86.400 s at 1000×.
 In the replay, v0 trades on its **own** signals (20386 BUY / 20176 SELL over the full day; 93 / 87 at 1×).
@@ -58,42 +61,48 @@ own per-trade processing times as the reaction time.
 
 | | v0 | mem |
 |---|---|---|
-| Processing time per trade, avg | 1207.7 ns | 53.0 ns |
-| Processing time per trade, worst | 36.1 µs | 25.5 µs |
-| Whole-file timing pass | 11,104 ms | 792.5 ms |
+| Processing time per trade, avg | 1190.6 ns | 50.6 ns |
+| Processing time per trade, worst | 88.5 µs | 29.6 µs |
+| Whole-file timing pass | 10,950.7 ms | 771.5 ms |
 
 **At R = 1 µs:**
 
 | | Signals won (of 37,063) | P&L (USDT) |
 |---|---|---|
 | v0  | 0      | +207,415.12 |
-| mem | 37,059 | +209,214.42 |
+| mem | 37,060 | +209,214.42 |
 | **Money lost to slow code** = P&L(mem) − P&L(v0) | | **+1,799.30** |
 
 - That is 0.86 % of mem's P&L. P&L counts closed round trips only (18,531); the final open
   buy is not counted.
-- Run 1 gave +1,798.92 and runs 2–5 gave +1,799.30. mem lost 3–4 signals per run, on the
-  trades where its processing time went above 1 µs.
+- All 5 runs gave +1,799.30. mem lost 3–4 signals per run, on the trades where its
+  processing time went above 1 µs.
 - For comparison, v0 trading on its **own** signals at R = 1 µs: +207,375.30 USDT.
 
 **Where each version starts winning** (sweep R = 0.1 → 100 µs, 31 steps; `rival_sweep.png`):
 
 | | Result |
 |---|---|
-| v0  | wins 0 % up to R = 1.000 µs, then 95.7 % at the next step, R = 1.259 µs, and 100 % from R = 3.162 µs. So v0 starts winning between **1.0 and 1.26 µs**. |
-| mem | already wins 99.9 % at the smallest R tested (0.1 µs) and 100 % from R = 0.2 µs. So mem wins at **every R tested (≤ 0.1 µs)**. |
+| v0  | wins 0 % up to R = 1.000 µs, then 97.3–97.6 % at the next step, R = 1.259 µs, and 100 % from R = 3.162 µs. So v0 starts winning between **1.0 and 1.26 µs**. |
+| mem | already wins 99.6–99.8 % at the smallest R tested (0.1 µs) and 100 % from R = 0.251 µs. So mem wins at **every R tested (≤ 0.1 µs)**. |
 
-The sweep is identical in all 5 runs. `stageC/rival_sweep.dat` is from run 5.
+The win percentages change slightly from run to run (ranges above). `stageC/rival_sweep.dat`
+and `rival_sweep.png` are from run 5.
+
+**asm variant** (`stageC_rival_asm`, AArch64 `ohlc_fx.s`, 1 run, `rival_asm_run1.txt`):
+same signals, mem 50.6 ns avg (same as the C build), won 37,059 of 37,063, money lost +1,799.30.
 
 ## Failed, interrupted or questionable runs
 
 | Run | What happened | Used in the medians? |
 |---|---|---|
-| `replay_mem_100x_run5`, first attempt (started 2026-11-12 23:31) | The Pi crashed / lost power during the run. The log was empty. The cause is unknown (no persistent system log). | **No.** Rerun after the reboot on 2026-11-12 23:53 with the governor set back to `performance`. The rerun (exit 0) is the run 5 used here. |
-| `replay_mem_1x_run5` | Never started because of the crash; run after the reboot (exit 0). | Yes |
-| `replay_v0_1x_run1` | A ~1 s `gnuplot` test (lowest priority, `nice -n 19`) ran on the Pi at ~19:50 during this timed run. | **Yes, flagged.** Its values are inside the range of runs 2–5 on every measure (processing 1315.0 vs 1313.8–1322.5 ns; avg latency 25.47 vs 25.56–25.72 µs; max lag 0.323 vs 0.321–0.334 ms). Without it, the median processing avg would be 1316.1 ns instead of 1315.0 ns. |
+| `replay_mem_1000x_run2`, first attempt (13 Nov 17:49) | The replays were paused on purpose after `replay_mem_1x_run1`. This run had just started and was stopped after a few seconds; its partial log was deleted. | **No.** The Pi was rebooted, the governor set back to `performance`, and mem runs 2–5 were run on 14 Nov 00:56–02:40 with the same binary and commands. That rerun (exit 0) is the run 2 used here. |
+| `replay_v0_1x_run3` | Max lag 0.755 ms, the other runs 0.316–0.323 ms. Its other values are inside the range. | Yes. Does not change the median (0.322 ms). |
+| `replay_mem_100x_run2` | Max lag 0.709 ms, the other runs 0.353–0.355 ms. Its other values are inside the range. | Yes. Does not change the median (0.355 ms). |
 
-The two run-5 reruns match runs 1–4 (same signals and VWAPs; timings inside or at the edge of the range).
+The replays ran in two sessions: 18 runs on 13 Nov (15:13–17:49) and the remaining 12 mem
+runs on 14 Nov (00:56–02:40). The mem runs from both sessions match (same signals and VWAPs;
+timings within the same range).
 
-Earlier runs of the *old* Stage C code (12 Nov, before the rewrite) are archived on the Pi
-in `~/stageC_results_OLD_CODE_2026-11-12/` and are **not** used here.
+Earlier runs of older Stage C code (12 Nov, commits before `b761240`) are not used here. They
+are in the git history of this folder and archived on the Pi.

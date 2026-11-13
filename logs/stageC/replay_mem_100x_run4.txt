@@ -1,17 +1,16 @@
-trade_io: reading data/stress_full.csv
 Stage C replay  engine=mem  speed=100x  windows=35/60  rival R=1 us
 file data/stress_full.csv: 8928944 trades, replaying 8928944 (trades 1..8928944), 1440.0 market minutes
-load 10054.9 ms (Leroi's load_trades_malloc), array 8928944 x 32 B = 285.7 MB
+load 2239.5 ms (load_trades_fx), array 8928944 x 32 B = 285.7 MB
 
 
 ==== summary (engine=mem, speed=100x) ====
 trades replayed   8928944   market time 86399.8 s   wall time 863.998 s
 throughput        10334 trades/s (wall)
 signals           20943 BUY, 20060 SELL   final VWAP 76718.67569889
-processing time   avg 56.2 ns   worst 8704 ns
+processing time   avg 51.8 ns   worst 11389 ns
 latency (release->decision)
-                  avg 3642.7 ns   worst 370722 ns
-max lag behind replay clock  0.371 ms
+                  avg 3518.2 ns   worst 354549 ns
+max lag behind replay clock  0.355 ms
 rival bot (R=1 us)   (1 BTC still held at the end, not counted)
-  reaction = latency          P&L +207722.15 USDT over 18531 round trips, won 15002 / lost 22061
-  reaction = processing time  P&L +209214.09 USDT over 18531 round trips, won 37063 / lost 0
+  reaction = latency          P&L +207717.82 USDT over 18531 round trips, won 15367 / lost 21696
+  reaction = processing time  P&L +209214.09 USDT over 18531 round trips, won 37049 / lost 14
