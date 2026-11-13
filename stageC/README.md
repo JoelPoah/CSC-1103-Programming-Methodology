@@ -16,34 +16,67 @@ On the Pi, add `-mcpu=cortex-a76` with `make stageC CFLAGS_C="-O2 -Wall -mcpu=co
 | – | race demo: V0 vs fastest side by side, lag counter + P&L, LED | two terminals, see below |
 | – | every version still passes test20 | see "How to run" |
 
-## Design: Stage C only joins up code from earlier stages
+## Design: Stage C's engine is built on Stage B's
+
+Stage C has its own engine folder, built the same way Stage B's was built from Stage A:
+Stage B's modules are copied into `stageC/engine/` (each file says so at the top, the
+code is unchanged), and Stage C adds what the brief asks for in Stage C next to them.
+Everything Stage C runs, and everything `make asm` compiles, is in `stageC/engine/`.
 
 ```
-stageC/stageC_replay.c     the replay: clock, lag, latency, LED, coloured signals, live P&L
-stageC/stageC_rival.c      per-trade timing of v0 and mem, rival bot P&L, R sweep
-stageC/engine/v0_engine.*  Version 0 = helper library next_trade() (fgets + sscanf, one
-                           line from the file per trade) + Stage A modules
-                           (stageA/engine: vwap, ohlc, NAIVE sma, signal), as in stageA_manual.c
-stageC/engine/mem_engine.* fastest   = Leroi's load_trades_malloc() array + Leroi's Stage B
-                           fixed-point modules (stageB/engine: vwap_fx, ohlc_fx, sma_fx, signal_fx)
-stageC/engine/trades_malloc.*  Leroi's loader: count lines, malloc to fit, fill
-stageC/engine/rival.*      rival bot P&L rules (cents, exact)
+stageC/engine/  -- copied from stageB/engine/ (unchanged) --
+  fixed.h                         PRICE_SCALE (cents), QTY_SCALE
+  vwap.*     vwap_fx.*            running VWAP (double / fixed-point)
+  ohlc.*     ohlc_fx.*            one-second OHLC bars
+  sma.*      sma_naive.*  sma_fx.*   running-sum SMA, naive SMA (Version 0), fixed-point SMA
+  signal.*   signal_fx.*          short/long SMA crossover -> BUY / SELL
+
+stageC/engine/  -- added in Stage C --
+  trades_fx.h                     Stage B's TradeFx, now in a malloc'd array sized to the file
+  trades_fx_malloc.c              load_trades_fx(): count lines, malloc, fill with fgets (as ladder V6)
+  trades_fx_fread.c               load_trades_fx(): whole file with one fread           (as ladder V7)
+  read_trade_fx.*                 line -> TradeFx in cents without sscanf
+  ohlc_fx.s                       Yong Sheng's AArch64 OHLC, drop-in for ohlc_fx.c   (as ladder V8)
+  stream_engine.*                 Version 0 (v0): helper library next_trade() (fgets + sscanf,
+                                  one line from the file per trade) + vwap, ohlc, NAIVE sma, signal
+  fixed_engine.*                  fastest (mem): TradeFx array + vwap_fx, ohlc_fx, sma_fx, signal_fx
+  rival.*                         rival bot P&L rules (cents, exact)
+  trades_malloc.*                 Leroi's malloc'd double array (memory comparison, stageC_malloc.c)
+
+stageC/stageC_replay.c            the replay: clock, lag, latency, LED, coloured signals, live P&L
+stageC/stageC_rival.c             per-trade timing of v0 and mem, rival bot P&L, R sweep
 ```
 
-The two engine files add no new maths: each one only calls the earlier stages' functions,
-so v0 and mem are exactly the group's Version 0 and fastest version.
+`stream_engine` and `fixed_engine` add no new maths: they only call the modules above,
+so v0 and mem compute exactly what the group's Version 0 and fastest version compute
+(same signals and VWAP on test20 and dev_1M).
 
-The code only uses C from the lectures: if / else, while and for loops, functions, arrays,
-pointers, structs and malloc / free. No `enum`, `switch`, `?:`, `volatile`, signal
-handlers, `#error`, `qsort` or `for(;;)`.
+### Variants (same idea as the src/ ladder)
+
+The replay and the rival bot are built in variants from the same source files; only
+the files linked for `mem` change (see the Makefile), so any difference in load time,
+memory or reaction time comes from those files alone:
+
+| Program | `mem` links | Same as | Built |
+|---|---|---|---|
+| `stageC_replay`, `stageC_rival` | `trades_fx_fread.c` + `ohlc_fx.c` | ladder V7 | everywhere (default) |
+| `stageC_replay_malloc`, `stageC_rival_malloc` | `trades_fx_malloc.c` + `ohlc_fx.c` | ladder V6 | everywhere |
+| `stageC_replay_asm`, `stageC_rival_asm` | `trades_fx_fread.c` + `ohlc_fx.s` | ladder V8 | Raspberry Pi only |
+
+`assembly/sma_fx.s` is not used, as in V8: on the Pi it ran slower than the C `sma_fx.c`.
+
+Stage C's own code only uses C from the lectures: if / else, while and for loops,
+functions, arrays, pointers, structs and malloc / free. No `enum`, `switch`, `?:`,
+`volatile`, signal handlers, `#error`, `qsort`, `for(;;)`, `unsigned` or `size_t`, and
+every `if` has braces. The files copied from Stage B are kept exactly as Stage B wrote them.
 
 ### Key decisions (to defend in the report and the demo)
 - **Version 0 reads the file during the replay.** When trade *t* is released, `v0` calls
   `next_trade()`, which reads that one line from the file and runs `sscanf` on it, exactly
-  like `stageA_manual.c`. `mem` takes the trade from Leroi's array, which was filled once
+  like Version 0 in Stages A and B. `mem` takes the trade from the TradeFx array, which was filled once
   before the replay started. So the race compares the real Version 0 against the fastest
   version.
-- **The replay clock comes from Leroi's array.** Every trade's timestamp is in the array, so
+- **The replay clock comes from the TradeFx array.** Every trade's timestamp is in the array, so
   the release time of trade *t* is known before it is read: `start + (τ_t − τ_first) / speed`.
   The program waits for that moment, sleeping only when it is more than 20 ms early and
   checking the clock for the last part, because sleeping can overshoot by milliseconds.

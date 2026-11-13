@@ -2,7 +2,7 @@
  * rival.c - rival bot P&L simulation (see rival.h)
  */
 #include "rival.h"
-#include "../../stageB/engine/signal.h"   /* SIG_BUY, SIG_SELL, SIG_NONE */
+#include "signal.h"                         /* SIG_BUY, SIG_SELL, SIG_NONE */
 
 /* rival_init
  * What:    no position, no P&L; R converted from us to ns (rounded)

@@ -2,16 +2,16 @@
  * stageC_replay.c - Stage C real-time replay (Lucas)
  *
  * What it does:
- *   1) LOAD:    Leroi's load_trades_malloc() reads the whole CSV into an array
- *               made with malloc to fit the file. Every trade's timestamp in
- *               that array is the replay clock.
+ *   1) LOAD:    load_trades_fx() (engine/trades_fx_fread.c) reads the whole
+ *               CSV with one fread into a malloc'd TradeFx array (prices in cents).
+ *               Every trade's timestamp in that array is the replay clock.
  *   2) REPLAY:  trade i is released at   start + (time of trade i - time of
  *               the first trade) / speed.  The program waits for that moment,
  *               then gives the trade to the chosen engine and times it:
- *                 v0  = Version 0 (Stage A): reads the trade's line from the
- *                       file with next_trade() and uses the Stage A modules
- *                 mem = fastest version: takes the trade from Leroi's array
- *                       and uses Leroi's Stage B fixed-point modules
+ *                 v0  = Version 0 (engine/stream_engine.c): reads the trade's
+ *                       line with next_trade(), double prices, naive SMA
+ *                 mem = fastest version (engine/fixed_engine.c, ladder V7): takes
+ *                       the trade from the TradeFx array, fixed-point modules
  *   3) SIGNAL:  each BUY / SELL is printed in colour and, with --led on the Pi,
  *               shown on the status LED (green = BUY, red = SELL)
  *   4) SUMMARY: average and worst processing time and latency, the biggest lag
@@ -46,12 +46,12 @@
 #include <stdlib.h>                      /* atoi, free */
 #include <string.h>                      /* strcmp */
 #include "../helper_function/led.h"
-#include "../stageB/engine/signal.h"     /* SIG_BUY, SIG_SELL, SIG_NONE */
-#include "../stageB/engine/sma.h"        /* MAX_WIN, the largest SMA window */
-#include "../stageB/engine/fixed.h"      /* PRICE_SCALE (cents)              */
-#include "engine/trades_malloc.h"        /* Leroi: Trade, load_trades_malloc() */
-#include "engine/v0_engine.h"            /* Version 0 (Stage A code)          */
-#include "engine/mem_engine.h"           /* fastest version (Stage B code)    */
+#include "engine/signal.h"               /* SIG_BUY, SIG_SELL, SIG_NONE */
+#include "engine/sma.h"                  /* MAX_WIN, the largest SMA window */
+#include "engine/fixed.h"                /* PRICE_SCALE (cents)              */
+#include "engine/trades_fx.h"            /* TradeFx, load_trades_fx() (fread loader) */
+#include "engine/stream_engine.h"        /* Version 0 (ladder V0) */
+#include "engine/fixed_engine.h"         /* fastest version (ladder V7) */
 #include "engine/rival.h"                /* the rival bot                     */
 
 /* ---- the two engines ---- */
@@ -255,7 +255,7 @@ void show_led(int sig) {
 }
 
 int main(int argc, char *argv[]) {
-    Trade *list;                       /* Leroi's malloc'd array of trades   */
+    TradeFx *list;                     /* malloc'd array from load_trades_fx() */
     long long n;                       /* how many trades it holds           */
     long long first, last, i;          /* replay trades first .. last-1      */
     long long done = 0;                /* trades replayed so far             */
@@ -278,12 +278,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    /* ---- 1) LOAD: the whole file into Leroi's array (not part of the replay) ---- */
+    /* ---- 1) LOAD: the whole file into the TradeFx array (not part of the replay) ---- */
     load_start = now_ns();
-    list = load_trades_malloc(opt_path, &n);
+    list = load_trades_fx(opt_path, &n);
     load_end = now_ns();
     if (list == NULL) {
-        return 1;                      /* Leroi's loader already printed why */
+        return 1;                      /* the loader already printed why */
     }
 
     /* ---- 2) pick the trades to replay: first .. last-1 ---- */
@@ -294,7 +294,7 @@ int main(int argc, char *argv[]) {
     }
     if (first >= n) {
         printf("--from-min is past the end of the file\n");
-        free(list);
+        free_trades_fx(list);
         return 1;
     }
     ts_first = list[first].time;
@@ -310,14 +310,14 @@ int main(int argc, char *argv[]) {
     /* ---- 3) get the engine ready ---- */
     if (opt_engine == ENGINE_V0) {
         name = "v0";
-        if (!v0_start(opt_path, opt_short, opt_long)) {
-            free(list);
+        if (!stream_start(opt_path, opt_short, opt_long)) {
+            free_trades_fx(list);
             return 1;
         }
-        v0_skip(first);                /* move the file to trade "first" */
+        stream_skip(first);                /* move the file to trade "first" */
     } else {
         name = "mem";
-        mem_start(opt_short, opt_long);
+        fixed_start(opt_short, opt_long);
     }
     rival_init(&rival, opt_rival_us);
     rival_init(&rival_proc, opt_rival_us);
@@ -327,9 +327,9 @@ int main(int argc, char *argv[]) {
     printf("file %s: %lld trades, replaying %lld (trades %lld..%lld), %.1f market minutes\n",
            opt_path, n, last - first, first + 1, last,
            (list[last - 1].time - ts_first) / 60e6);
-    printf("load %.1f ms (Leroi's load_trades_malloc), array %lld x %d B = %.1f MB\n\n",
-           (load_end - load_start) / 1e6, n, (int)sizeof(Trade),
-           (double)n * sizeof(Trade) / 1e6);
+    printf("load %.1f ms (load_trades_fx), array %lld x %d B = %.1f MB\n\n",
+           (load_end - load_start) / 1e6, n, (int)sizeof(TradeFx),
+           (double)n * sizeof(TradeFx) / 1e6);
 
     if (opt_led) {
         led_init();
@@ -352,9 +352,9 @@ int main(int argc, char *argv[]) {
         /* b) process the trade, timing ONLY the engine */
         t_start = now_ns();
         if (opt_engine == ENGINE_V0) {
-            sig = v0_step();
+            sig = stream_step();
         } else {
-            sig = mem_step(&list[i]);
+            sig = fixed_step(&list[i]);
         }
         t_done = now_ns();
 
@@ -383,13 +383,13 @@ int main(int argc, char *argv[]) {
         /* d) the rival bot: first fill an order lost on the previous signal
          *    at this trade's price, then react to this trade's signal */
         if (opt_engine == ENGINE_V0) {
-            price = v0_price_cents();
-            buys = v0_buys();
-            sells = v0_sells();
+            price = stream_price_cents();
+            buys = stream_buys();
+            sells = stream_sells();
         } else {
-            price = mem_price_cents(&list[i]);
-            buys = mem_buys();
-            sells = mem_sells();
+            price = fixed_price_cents(&list[i]);
+            buys = fixed_buys();
+            sells = fixed_sells();
         }
         rival_on_trade(&rival, price);
         rival_on_trade(&rival_proc, price);
@@ -423,14 +423,14 @@ int main(int argc, char *argv[]) {
 
     /* ---- 5) results from the engine ---- */
     if (opt_engine == ENGINE_V0) {
-        buys = v0_buys();
-        sells = v0_sells();
-        vwap = v0_vwap();
-        v0_stop();
+        buys = stream_buys();
+        sells = stream_sells();
+        vwap = stream_vwap();
+        stream_stop();
     } else {
-        buys = mem_buys();
-        sells = mem_sells();
-        vwap = mem_vwap();
+        buys = fixed_buys();
+        sells = fixed_sells();
+        vwap = fixed_vwap();
     }
     if (!opt_quiet) {
         show_status(name, list[first + done - 1].time, done, last - first, lag_ns,
@@ -458,6 +458,6 @@ int main(int argc, char *argv[]) {
            (double)rival_proc.pnl / PRICE_SCALE, rival_proc.round_trips,
            rival_proc.wins, rival_proc.losses);
 
-    free(list);                        /* give Leroi's array back */
+    free_trades_fx(list);
     return 0;
 }

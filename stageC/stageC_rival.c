@@ -2,15 +2,15 @@
  * stageC_rival.c - "slow code loses money": rival bot P&L and the R sweep (Lucas)
  *
  * Steps:
- *   1) LOAD:   Leroi's load_trades_malloc() reads the whole file into an
- *              array made with malloc to fit the file
+ *   1) LOAD:   load_trades_fx() (engine/trades_fx_fread.c) reads the whole
+ *              file with one fread into a malloc'd TradeFx array (cents)
  *   2) TIME:   run every trade through each version as fast as possible and
  *              time EACH trade with now_ns(). That per-trade processing time
  *              is the version's reaction time (brief, rival bot rule 2).
- *                v0  = Version 0: next_trade() reads each line from the file,
- *                      then the Stage A modules (naive SMA, double prices)
- *                mem = fastest version: Leroi's array + his Stage B
- *                      fixed-point modules
+ *                v0  = Version 0 (engine/stream_engine.c): next_trade() reads
+ *                      each line, double prices, naive SMA (ladder V0)
+ *                mem = fastest version (engine/fixed_engine.c): the TradeFx
+ *                      array + the fixed-point modules (ladder V7)
  *   3) SIGNALS: the brief says both versions raise exactly the same signals.
  *              Ours do not quite: Version 0 uses double + naive SMA, and when
  *              short SMA == long SMA, rounding gives d a random tiny sign (see
@@ -35,12 +35,12 @@
 #include <stdlib.h>                      /* malloc, free, atoi */
 #include <string.h>                      /* strcmp */
 #include <math.h>                        /* pow */
-#include "../stageB/engine/signal.h"     /* SIG_BUY, SIG_SELL, SIG_NONE */
-#include "../stageB/engine/sma.h"        /* MAX_WIN */
-#include "../stageB/engine/fixed.h"      /* PRICE_SCALE (cents) */
-#include "engine/trades_malloc.h"        /* Leroi: Trade, load_trades_malloc() */
-#include "engine/v0_engine.h"            /* Version 0 (Stage A code)  */
-#include "engine/mem_engine.h"           /* fastest version (Stage B code) */
+#include "engine/signal.h"               /* SIG_BUY, SIG_SELL, SIG_NONE */
+#include "engine/sma.h"                  /* MAX_WIN */
+#include "engine/fixed.h"                /* PRICE_SCALE (cents) */
+#include "engine/trades_fx.h"            /* TradeFx, load_trades_fx() (fread loader) */
+#include "engine/stream_engine.h"        /* Version 0 (ladder V0) */
+#include "engine/fixed_engine.h"         /* fastest version (ladder V7) */
 #include "engine/rival.h"                /* the rival bot */
 
 #define R_MIN_US    0.1          /* smallest rival reaction time in the sweep */
@@ -113,7 +113,7 @@ int main(int argc, char *argv[]) {
     char *path = NULL;
     char *out_path = "stageC/rival_sweep.dat";
     int short_win = 35, long_win = 60;
-    Trade *list;                         /* Leroi's malloc'd array        */
+    TradeFx *list;                     /* malloc'd array from load_trades_fx() */
     long long n, i, v0_diff = 0;
     long long t0, t1, pass_start;
     double v0_ms, mem_ms;
@@ -152,7 +152,7 @@ int main(int argc, char *argv[]) {
     }
 
     /* ---- 1) LOAD ---- */
-    list = load_trades_malloc(path, &n);
+    list = load_trades_fx(path, &n);
     if (list == NULL) {
         return 1;
     }
@@ -173,46 +173,46 @@ int main(int argc, char *argv[]) {
         free(v0_sig);
         free(mem_sig);
         free(price);
-        free(list);
+        free_trades_fx(list);
         return 1;
     }
 
     /* ---- 2a) time Version 0 on every trade ---- */
-    if (!v0_start(path, short_win, long_win)) {
+    if (!stream_start(path, short_win, long_win)) {
         return 1;
     }
     pass_start = now_ns();
     for (i = 0; i < n; i++) {
         t0 = now_ns();
-        v0_sig[i] = v0_step();
+        v0_sig[i] = stream_step();
         t1 = now_ns();
         v0_react[i] = t1 - t0;
     }
     v0_ms = (now_ns() - pass_start) / 1e6;
-    v0_stop();
-    v0_buy = v0_buys();
-    v0_sell = v0_sells();
-    v0_vw = v0_vwap();
+    stream_stop();
+    v0_buy = stream_buys();
+    v0_sell = stream_sells();
+    v0_vw = stream_vwap();
     printf("timing v0   ... %.1f ms\n", v0_ms);
 
     /* ---- 2b) time the fastest version on every trade ---- */
-    mem_start(short_win, long_win);
+    fixed_start(short_win, long_win);
     pass_start = now_ns();
     for (i = 0; i < n; i++) {
         t0 = now_ns();
-        mem_sig[i] = mem_step(&list[i]);
+        mem_sig[i] = fixed_step(&list[i]);
         t1 = now_ns();
         mem_react[i] = t1 - t0;
     }
     mem_ms = (now_ns() - pass_start) / 1e6;
-    mem_buy = mem_buys();
-    mem_sell = mem_sells();
-    mem_vw = mem_vwap();
+    mem_buy = fixed_buys();
+    mem_sell = fixed_sells();
+    mem_vw = fixed_vwap();
     printf("timing mem  ... %.1f ms\n", mem_ms);
 
     /* prices for the P&L (not timed) */
     for (i = 0; i < n; i++) {
-        price[i] = mem_price_cents(&list[i]);
+        price[i] = fixed_price_cents(&list[i]);
     }
 
     /* ---- 3) signals ---- */
@@ -279,6 +279,6 @@ int main(int argc, char *argv[]) {
     free(v0_sig);
     free(mem_sig);
     free(price);
-    free(list);
+    free_trades_fx(list);
     return 0;
 }
