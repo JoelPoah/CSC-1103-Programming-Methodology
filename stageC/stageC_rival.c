@@ -26,9 +26,9 @@
  * Usage (from the project root):
  *   stageC_rival <file.csv> [--short S] [--long L] [--out file.dat]
  * Example:
- *   ./stageC/stageC_rival data/stress_full.csv
+ *   ./stageC/stageC_rival data/group_data/stress_full.csv
  *   gnuplot stageC/plot_rival.gnuplot        -> stageC/rival_sweep.png
- * On the Pi: taskset -c 2 ./stageC/stageC_rival data/stress_full.csv
+ * On the Pi: taskset -c 2 ./stageC/stageC_rival data/group_data/stress_full.csv
  */
 #include "../helper_function/timing.h"   /* must come first (see timing.h) */
 #include <stdio.h>

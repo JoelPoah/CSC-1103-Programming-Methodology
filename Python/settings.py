@@ -9,12 +9,10 @@ Look for "EDIT:" - those are the lines meant to be changed.
 """
 
 # ---- csv files ----
-# EDIT: this is where the files sit on my laptop. The C programs read
-#       data/group_data/test20.csv, data/group_data/dev_1M.csv and
-#       data/group_data/stress_full.csv, so use those if your files are there.
-TEST20_PATH = "data/test20.csv"
-DEV_PATH = "data/dev_1M.csv"
-STRESS_PATH = "data/stress_full.csv"
+# EDIT: same paths the C programs use. Change them if your files sit elsewhere.
+TEST20_PATH = "data/group_data/test20.csv"
+DEV_PATH = "data/group_data/dev_1M.csv"
+STRESS_PATH = "data/group_data/stress_full.csv"
 
 # ---- output files for the plot ----
 SIGNALS_DAT = "Python/signals.dat"                 # stageA_Python.py (pure Python)

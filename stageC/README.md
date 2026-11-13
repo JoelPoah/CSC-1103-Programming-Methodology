@@ -112,20 +112,20 @@ Paths below assume the CSVs are in `data/`. Pass whatever path your copy uses.
 make stageC
 
 # test20 check (windows 3/5): both engines must print exactly 1 BUY at trade 7, 0 SELL
-./stageC/stageC_replay data/test20.csv --short 3 --long 5 --speed 0 --signals --engine v0
-./stageC/stageC_replay data/test20.csv --short 3 --long 5 --speed 0 --signals --engine mem
+./stageC/stageC_replay data/group_data/test20.csv --short 3 --long 5 --speed 0 --signals --engine v0
+./stageC/stageC_replay data/group_data/test20.csv --short 3 --long 5 --speed 0 --signals --engine mem
 
 # dev_1M check: v0 2509 BUY / 2469 SELL, mem 2553 BUY / 2469 SELL
-./stageC/stageC_replay data/dev_1M.csv --speed 0 --quiet --engine v0
-./stageC/stageC_replay data/dev_1M.csv --speed 0 --quiet --engine mem
+./stageC/stageC_replay data/group_data/dev_1M.csv --speed 0 --quiet --engine v0
+./stageC/stageC_replay data/group_data/dev_1M.csv --speed 0 --quiet --engine mem
 
 # Stage C 2+3+4 on the Pi (sudo for the LED, pinned to core 2):
-sudo taskset -c 2 ./stageC/stageC_replay data/stress_full.csv --speed 1 --minutes 10 --led   # real speed, 10 min
-sudo taskset -c 2 ./stageC/stageC_replay data/stress_full.csv --speed 100  --led             # ~14.4 min
-sudo taskset -c 2 ./stageC/stageC_replay data/stress_full.csv --speed 1000 --led             # ~1.5 min
+sudo taskset -c 2 ./stageC/stageC_replay data/group_data/stress_full.csv --speed 1 --minutes 10 --led   # real speed, 10 min
+sudo taskset -c 2 ./stageC/stageC_replay data/group_data/stress_full.csv --speed 100  --led             # ~14.4 min
+sudo taskset -c 2 ./stageC/stageC_replay data/group_data/stress_full.csv --speed 1000 --led             # ~1.5 min
 
 # Stage C 6: rival bot + sweep -> stageC/rival_sweep.dat -> stageC/rival_sweep.png
-taskset -c 2 ./stageC/stageC_rival data/stress_full.csv
+taskset -c 2 ./stageC/stageC_rival data/group_data/stress_full.csv
 gnuplot stageC/plot_rival.gnuplot
 
 # Stage C 5: assembly (on the Pi this writes *_aarch64_O2.s)
@@ -133,8 +133,8 @@ make asm
 
 # Race demo: two terminals side by side, same speed. Pick a speed where v0 falls
 # behind on the Pi (try 1000, then 5000 / 10000), e.g.
-taskset -c 2 ./stageC/stageC_replay data/stress_full.csv --engine v0  --speed 5000
-sudo taskset -c 3 ./stageC/stageC_replay data/stress_full.csv --engine mem --speed 5000 --led
+taskset -c 2 ./stageC/stageC_replay data/group_data/stress_full.csv --engine v0  --speed 5000
+sudo taskset -c 3 ./stageC/stageC_replay data/group_data/stress_full.csv --engine mem --speed 5000 --led
 ```
 
 Options: `--engine v0|mem`, `--speed X` (0 = no clock), `--minutes M`, `--from-min M`
