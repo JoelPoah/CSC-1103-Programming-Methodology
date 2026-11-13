@@ -12,6 +12,15 @@ data/**/*.csv
 *.o
 *.out
 stage0/question_a/a_loop_sum
+stage0/question_a/a_loop_sum_O0
+stage0/question_a/a_loop_sum_O1
+stage0/question_a/a_loop_sum_O2
+stage0/question_a/a_loop_sum_O3
+stage0/question_a/a_loop_sum_fixed_O0
+stage0/question_a/a_loop_sum_fixed_O1
+stage0/question_a/a_loop_sum_fixed_O2
+stage0/question_a/a_loop_sum_fixed_O3
+stage0/bin/
 stage0/question_b/loop_sum
 stage0/question_b/recursion_sum
 stage0/question_b/loop_sum_O0
@@ -23,13 +32,13 @@ stage0/question_b/recursion_sum_O1
 stage0/question_b/recursion_sum_O2
 stage0/question_b/recursion_sum_O3
 helper_function/test_helpers
-stageA/stageA_stream
-stageA/stageA_running_sma
+stageA/stageA_plot
 stageA/stageA_manual
 stageC/stageC_malloc
 stageC/stageC_replay
 stageC/stageC_rival
 stageC/test_parser
+benchmark/benchmark
 
 # Generated data dumps and temporary artifacts
 *.dat
@@ -44,3 +53,7 @@ __pycache__/
 # Personal scratch work and local data (not for the group repo)
 codespace/
 data/
+
+# ladder executables built by "make ladder" (Linux / Pi names; .exe is covered above)
+bin/*
+!bin/.gitkeep

@@ -1,96 +1,144 @@
-WINDOWS:
-[gcc -O0 .\loop_sum.c -o loop_sum_O0] //default 
-sum: 50005000
-Time taken: 15400 ns, 19300 ns, 12100 ns, 13400 ns, 17100 ns // average: 15,460 ns
+LAPTOP: WINDOWS (gcc, n = 10000, 5 runs each):
+    LOOP:
+        [gcc -O0 .\loop_sum.c -o loop_sum_O0] //default
+        sum: 50005000
+        Time taken: 11900 ns, 9100 ns, 7700 ns, 9400 ns, 10000 ns // average: 9,620 ns
 
-[gcc -O1 .\loop_sum.c -o loop_sum_O1]
-sum: 50005000
-Time taken: 2500 ns , 2100 ns, 2500 ns, 2800 ns, 2300 ns // average: 2,440 ns
+        [gcc -O1 .\loop_sum.c -o loop_sum_O1]
+        sum: 50005000
+        Time taken: 6100 ns, 4500 ns, 5700 ns, 6000 ns, 6000 ns // average: 5,660 ns
 
-[gcc -O2 .\loop_sum.c -o loop_sum_O2]
-sum: 50005000
-Time taken: 0 ns , 0ns, 0ns , 100ns, 0ns //average: 20ns
+        [gcc -O2 .\loop_sum.c -o loop_sum_O2]
+        sum: 50005000
+        Time taken: 100 ns, 0 ns, 100 ns, 100 ns, 0 ns // average: 60 ns
 
-[gcc -O3 .\loop_sum.c -o loop_sum_O3]
-sum: 50005000
-Time taken: 0 ns, 100ns , 0 ns , 100 ns, 0 ns //average: 40ns
+        [gcc -O3 .\loop_sum.c -o loop_sum_O3]
+        sum: 50005000
+        Time taken: 0 ns, 100 ns, 100 ns, 100 ns, 100 ns // average: 80 ns
 
-[gcc -O0 .\recursion_sum.c -o recursion_sum_O0] //default
-[led.h] No built-in LED on this computer. Printing instead.
-[LED GREEN ON]
-sum: 50005000
-[LED GREEN OFF]
-Time taken: 280900 ns ,284700 ns, 297700 ns, 288800 ns, 293200 ns // average: 289,060 ns
+    RECURSION:
 
-[gcc -O1 .\recursion_sum.c -o recursion_sum_O1]
-[led.h] No built-in LED on this computer. Printing instead.
-[LED GREEN ON]
-sum: 50005000
-[LED GREEN OFF]
-Time taken: 228200 ns, 230700 ns, 268500 ns, 212000 ns, 208800 ns // average: 229,640 ns
+        [gcc -O0 .\recursion_sum.c -o recursion_sum_O0] //default
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        [LED GREEN OFF]
+        sum: 50005000
+        Time taken: 584500 ns, 497000 ns, 518700 ns, 516400 ns, 531200 ns // average: 529,560 ns
 
-[gcc -O2 .\recursion_sum.c -o recursion_sum_O2]
-[led.h] No built-in LED on this computer. Printing instead.
-[LED GREEN ON]
-sum: 50005000
-[LED GREEN OFF]
-Time taken: 13600 ns, 55300 ns,  14500 ns,  43900 ns, 27600 ns // average: 30,980 ns
+        [gcc -O1 .\recursion_sum.c -o recursion_sum_O1]
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        [LED GREEN OFF]
+        sum: 50005000
+        Time taken: 801000 ns, 573400 ns, 621700 ns, 531700 ns, 940700 ns // average: 693,700 ns
 
-[gcc -O3 .\recursion_sum.c -o recursion_sum_O3]
-[led.h] No built-in LED on this computer. Printing instead.
-[LED GREEN ON]
-sum: 50005000
-[LED GREEN OFF]
-Time taken: 12900 ns, 74800 ns, 14900 ns, 42900 ns, 42400 ns //average: 37,580 ns
+        [gcc -O2 .\recursion_sum.c -o recursion_sum_O2]
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        [LED GREEN OFF]
+        sum: 50005000
+        Time taken: 0 ns, 100 ns, 0 ns, 0 ns, 0 ns // average: 20 ns
+
+        [gcc -O3 .\recursion_sum.c -o recursion_sum_O3]
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        [LED GREEN OFF]
+        sum: 50005000
+        Time taken: 100 ns, 0 ns, 0 ns, 100 ns, 100 ns // average: 60 ns
+
+RPI: Pi OS (gcc, n = 10000, 5 runs each):
+
+    LOOP:
+        [gcc -O0 .\loop_sum.c -o loop_sum_O0] //default
+        sum: 50005000
+        Time taken: 42744 ns, 42837 ns, 42559 ns, 43059 ns, 42707 ns // average: 42,781 ns
+
+        [gcc -O1 .\loop_sum.c -o loop_sum_O1]
+        sum: 50005000
+        Time taken: 6760 ns, 6760 ns, 6779 ns, 6760 ns, 6778 ns // average: 6,767 ns
+
+        [gcc -O2 .\loop_sum.c -o loop_sum_O2]
+        sum: 50005000
+        Time taken: 93 ns, 74 ns, 92 ns, 74 ns, 74 ns // average: 81 ns
+
+        [gcc -O3 .\loop_sum.c -o loop_sum_O3]
+        sum: 50005000
+        Time taken: 74 ns, 92 ns, 74 ns, 74 ns, 92 ns // average: 81 ns
+
+    RECURSION:
+
+        [gcc -O0 .\recursion_sum.c -o recursion_sum_O0] //default
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        [LED GREEN OFF]
+        sum: 50005000
+        Time taken: 108124 ns, 114254 ns, 113810 ns, 110458 ns, 110791 ns // average: 111,487 ns
+
+        [gcc -O1 .\recursion_sum.c -o recursion_sum_O1]
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        [LED GREEN OFF]
+        sum: 50005000
+        Time taken: 89733 ns, 99346 ns, 91122 ns, 88104 ns, 86029 ns // average: 90,867 ns
+
+        [gcc -O2 .\recursion_sum.c -o recursion_sum_O2]
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        [LED GREEN OFF]
+        sum: 50005000
+        Time taken: 92 ns, 93 ns, 92 ns, 92 ns, 92 ns // average: 92 ns
+
+        [gcc -O3 .\recursion_sum.c -o recursion_sum_O3]
+        [led.h] No built-in LED on this computer. Printing instead.
+        [LED GREEN ON]
+        [LED GREEN OFF]
+        sum: 50005000
+        Time taken: 74 ns, 93 ns, 92 ns, 74 ns, 93 ns // average: 85 ns
+
+SUMMARY (average time in ns, speedup = O0 time / Ox time):
+
+                 LAPTOP                         RPI
+             Loop          Recursion        Loop          Recursion
+    -O0      9,620 (1.00x) 529,560 (1.00x)  42,781 (1.00x) 111,487 (1.00x)
+    -O1      5,660 (1.70x) 693,700 (0.76x)   6,767 (6.32x)  90,867 (1.23x)
+    -O2         60         20                  81             92
+    -O3         80         60                  81             85
 
 
-RASPBERRY PI:
-[gcc -O0 .\loop_sum.c -o loop_sum_O0] //default 
-sum: 50005000
-Time taken: 42944 ns, 43017 ns, 42796 ns, 42980 ns, 42777 ns // average: 42,902 ns
+ANALYSIS:
 
-[gcc -O1 .\loop_sum.c -o loop_sum_O1]
-sum: 50005000
-Time taken: 6777 ns, 6777 ns, 6759 ns, 6759 ns, 6778 ns // average: 6,770 ns
+1. Loop vs recursion at -O0 and -O1: the loop is much faster.
+   The loop only adds a number and moves to the next one. Recursion has to make
+   10,000 function calls, and every call saves a return address and a stack frame
+   on the stack, then removes it again on the way back. That extra work makes
+   recursion about 55x slower than the loop on the Laptop and about 2.6x slower on the Pi.
 
-[gcc -O2 .\loop_sum.c -o loop_sum_O2]
-sum: 50005000
-Time taken: 92 ns, 92ns, 74ns, 74ns, 74ns //average: 81ns
+2. -O0 to -O1: the loop gets faster, recursion barely changes.
+   At -O0, the loop reads and writes i and total from memory every time. At -O1
+   the compiler keeps them in CPU registers, which is much faster (1.70x Laptop,
+   6.32x Pi). Recursion is still 10,000 real function calls at -O1, so the
+   time is mostly the cost of the calls and stays about the same. The Laptop -O1
+   recursion average (693,700 ns) is slower than -O0, but its runs varied a lot
+   (531,700 to 940,700 ns), so this is most likely noise rather than -O1 being worse.
 
-[gcc -O3 .\loop_sum.c -o loop_sum_O3]
-sum: 50005000
-Time taken: 93 ns, 74ns, 93 ns, 74 ns, 74 ns //average: 81ns
+3. -O2 and -O3: both programs take almost no time.
+   n = 10000 is fixed in the code, so at -O2 the compiler works out the answer
+   before the program runs. The Laptop -O2 assembly contains 50005000 as a fixed
+   number and never runs the loop or calls counter. The program only prints the
+   answer, so the times measure nothing. -O3 gives no extra gain because there
+   is no work left to remove.
 
-[gcc -O0 .\recursion_sum.c -o recursion_sum_O0] //default
-[led.h] No built-in LED on this computer. Printing instead.
-[LED GREEN ON]
-sum: 50005000
-[LED GREEN OFF]
-Time taken: 112351 ns, 111498 ns, 112517 ns, 120535 ns, 114739 ns // average: 114,328 ns
+4. These tiny numbers are limited by the timer, not the code.
+   The Laptop timer counts in steps of 100 ns, so results show only 0 or 100 ns.
+   The Pi timer counts in steps of about 18.5 ns, which is why its results
+   are always 74 ns (4 steps) or 92-93 ns (5 steps).
 
-[gcc -O1 .\recursion_sum.c -o recursion_sum_O1]
-[led.h] No built-in LED on this computer. Printing instead.
-[LED GREEN ON]
-sum: 50005000
-[LED GREEN OFF]
-Time taken: 89684 ns, 126646 ns,  101332 ns,  90869 ns, 82907 ns // average: 98,287 ns
-
-[gcc -O2 .\recursion_sum.c -o recursion_sum_O2]
-[led.h] No built-in LED on this computer. Printing instead.
-[LED GREEN ON]
-sum: 50005000
-[LED GREEN OFF]
-Time taken: 1611 ns, 1556 ns,  1648 ns,  2389 ns, 2389 ns // average: 1,918 ns
-
-[gcc -O3 .\recursion_sum.c -o recursion_sum_O3]
-[led.h] No built-in LED on this computer. Printing instead.
-[LED GREEN ON]
-sum: 50005000
-[LED GREEN OFF]
-Time taken: 1463 ns, 7703 ns, 2148 ns, 7667 ns, 2129 ns //average: 4,222 ns
-
-
-FINDINGS:
-1. Higher optimisation levels gave big speedups, mostly from -O0 to -O2. -O3 added nothing, and at -O2/-O3 the loop was essentially optimised away, so those numbers are below the timer’s resolution.
-2. Recursion was always slower than the loop because of function-call overhead, until -O2 partly converted it into a loop.
-3. Windows was about 2.8× faster for the loop but slower for recursion, so performance depends on the architecture, calling convention, and compiler, not just CPU speed.
+5. Laptop vs Pi:
+   The Laptop runs the loop about 4.4x faster than the Pi at -O0, because its CPU
+   is faster. But the Pi runs recursion about 4.7x faster than the Laptop at -O0.
+   A likely reason is that Windows x64 function calls are more expensive: each call
+   must reserve extra stack space (32 bytes of "shadow space"), so 10,000 calls
+   need much more stack memory, and Windows has to give the program new stack pages
+   as it grows. ARM on the Pi uses smaller frames and stores the return address in
+   a register. This has not been measured directly, so it is the likely cause,
+   not a confirmed one.
