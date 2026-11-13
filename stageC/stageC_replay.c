@@ -31,12 +31,12 @@
  *     --quiet         print only the summary (no signal or status lines)
  *
  * Examples (from the project root):
- *   test20 check:   ./stageC/stageC_replay data/test20.csv --short 3 --long 5 --speed 0 --signals --engine v0
+ *   test20 check:   ./stageC/stageC_replay data/group_data/test20.csv --short 3 --long 5 --speed 0 --signals --engine v0
  *   10 minutes at real speed with the LED (Pi):
- *                   sudo taskset -c 2 ./stageC/stageC_replay data/stress_full.csv --speed 1 --minutes 10 --led
+ *                   sudo taskset -c 2 ./stageC/stageC_replay data/group_data/stress_full.csv --speed 1 --minutes 10 --led
  *   race (two terminals):
- *                   ./stageC/stageC_replay data/stress_full.csv --engine v0  --speed 5000
- *                   sudo ./stageC/stageC_replay data/stress_full.csv --engine mem --speed 5000 --led
+ *                   ./stageC/stageC_replay data/group_data/stress_full.csv --engine v0  --speed 5000
+ *                   sudo ./stageC/stageC_replay data/group_data/stress_full.csv --engine mem --speed 5000 --led
  *
  * If you stop it early with Ctrl-C, the LED keeps its last colour: reboot the
  * Pi to give the LED back to the system (see the brief, section 7).
