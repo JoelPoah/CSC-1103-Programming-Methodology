@@ -9,16 +9,16 @@ Look for "EDIT:" - those are the lines meant to be changed.
 """
 
 # ---- csv files ----
-# EDIT: this is where the files sit on my laptop. The C programs read
-#       data/group_data/test20.csv, data/group_data/dev_1M.csv and
-#       data/group_data/stress_full.csv, so use those if your files are there.
-TEST20_PATH = "data/test20.csv"
-DEV_PATH = "data/dev_1M.csv"
-STRESS_PATH = "data/stress_full.csv"
+# EDIT: same paths the C programs use. Change them if your files sit elsewhere.
+TEST20_PATH = "data/group_data/test20.csv"
+DEV_PATH = "data/group_data/dev_1M.csv"
+STRESS_PATH = "data/group_data/stress_full.csv"
 
 # ---- output files for the plot ----
-SIGNALS_DAT = "Python/signals.dat"
+SIGNALS_DAT = "Python/signals.dat"                 # stageA_Python.py (pure Python)
 SIGNALS_PNG = "Python/signals.png"
+SIGNALS_DAT_NUMPY = "Python/signals_numpy.dat"     # stageA_Python_numpy.py
+SIGNALS_PNG_NUMPY = "Python/signals_numpy.png"
 
 # ---- SMA windows ----
 TEST_SHORT = 3       # test20.csv always uses 3 and 5 (same for every group)
@@ -39,6 +39,7 @@ BENCH_RUNS = 5             # EDIT: the brief asks for at least 5 runs, we print 
 
 # ---- how signals.png looks ----
 PLOT_TITLE = "Stage A (Python): SMA crossover signals"
+PLOT_TITLE_NUMPY = "Stage A (Python + NumPy): SMA crossover signals"
 PLOT_WIDTH = 14            # EDIT: inches, times PLOT_DPI = pixels (14 x 100 = 1400 px like the gnuplot one)
 PLOT_HEIGHT = 7
 PLOT_DPI = 100

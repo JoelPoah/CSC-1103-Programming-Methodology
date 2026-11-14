@@ -22,7 +22,7 @@
 
 #define TEST_PATH "data/group_data/test20.csv"
 #define DEV_PATH "data/group_data/dev_1M.csv"
-#define STRESS_PATH "data/stress_full.csv"
+#define STRESS_PATH "data/group_data/stress_full.csv"
 #define SHORT_WINDOW 35
 #define LONG_WINDOW 60
 

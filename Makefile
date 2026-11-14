@@ -4,9 +4,9 @@
 #   make stage0     build stage0 only (question a + question b)
 #   make stageA     build stageA only (stageA_manual = Version 0, stageA_plot)
 #   make plotA      build stageA_plot and run it (writes stageA/signals.dat + signals.png)
-#   make stageC     build stageC only (stageC_malloc, stageC_replay, stageC_rival)
+#   make stageC     build stageC only (stageC_malloc, stageC_replay/_rival + _malloc, + _asm on the Pi)
 #   make asm        write the -O2 assembly of the fixed-point kernels to stageC/asm/
-#   make ladder     build every version V0-V7 from src/ into bin/
+#   make ladder     build every version V0-V7 from src/ into bin/ (+ V8 on the Pi)
 #   make benchmark  build the -O0..-O3 benchmark tool (benchmark/benchmark.c)
 #   make clean      delete all built executables
 #
@@ -53,18 +53,35 @@ HELPERS = helper_function/timing.h helper_function/led.h
 # ---- stageC ----
 # stageC_malloc = Stage B in-memory engine with a malloc'd array (Leroi)
 # stageC_replay = real-time replay, LED / coloured signals, latency, lag, live P&L
-# stageC_rival  = rival bot P&L for v0 / fast / mem and the R sweep (rival_sweep.dat)
-STAGEC_MALLOC = stageC/stageC_malloc$(EXE)
-STAGEC_REPLAY = stageC/stageC_replay$(EXE)
-STAGEC_RIVAL  = stageC/stageC_rival$(EXE)
-STAGEC_TEST   = stageC/test_parser$(EXE)
-STAGEC = $(STAGEC_MALLOC) $(STAGEC_REPLAY) $(STAGEC_RIVAL) $(STAGEC_TEST)
+# stageC_rival  = rival bot P&L for v0 / mem and the R sweep (rival_sweep.dat)
+#
+# Stage C has its own engine in stageC/engine/, built the same way Stage B was
+# built from Stage A: Stage B's modules (vwap, ohlc, sma, sma_naive, signal and
+# their _fx versions) are copied there, and Stage C adds its malloc'd loaders,
+# the AArch64 ohlc_fx.s and the rival bot.
+#   Version 0 (v0)  = stream_engine.c: helper library (next_trade) + double modules + naive SMA
+#   fastest   (mem) = fixed_engine.c:  TradeFx loader + fixed-point modules
+#
+# Like the src/ ladder, the replay and the rival bot come in variants that use the
+# same source files; only the files linked for "mem" change:
+#   _malloc  trades_fx_malloc.c (fgets, file read twice)   = ladder V6
+#   (none)   trades_fx_fread.c  (one fread)                = ladder V7
+#   _asm     V7 + ohlc_fx.s instead of ohlc_fx.c           = ladder V8, Raspberry Pi only
+STAGEC_MALLOC       = stageC/stageC_malloc$(EXE)
+STAGEC_REPLAY       = stageC/stageC_replay$(EXE)
+STAGEC_RIVAL        = stageC/stageC_rival$(EXE)
+STAGEC_REPLAY_MALLOC = stageC/stageC_replay_malloc$(EXE)
+STAGEC_RIVAL_MALLOC  = stageC/stageC_rival_malloc$(EXE)
+STAGEC_REPLAY_ASM   = stageC/stageC_replay_asm$(EXE)
+STAGEC_RIVAL_ASM    = stageC/stageC_rival_asm$(EXE)
+STAGEC = $(STAGEC_MALLOC) $(STAGEC_REPLAY) $(STAGEC_RIVAL) $(STAGEC_REPLAY_MALLOC) $(STAGEC_RIVAL_MALLOC)
 
-# Stage B engine modules: double (Version 0 maths) and fixed-point (fastest)
-ENGINE_B_DBL = stageB/engine/vwap.c stageB/engine/ohlc.c stageB/engine/sma.c stageB/engine/sma_naive.c stageB/engine/signal.c
-ENGINE_B_FX  = stageB/engine/vwap_fx.c stageB/engine/ohlc_fx.c stageB/engine/sma_fx.c stageB/engine/signal_fx.c
-ENGINE_C     = stageC/engine/feed.c stageC/engine/fast_parse.c stageC/engine/engine.c stageC/engine/rival.c stageC/engine/latency.c stageC/engine/display.c
-ENGINE_C_H   = $(wildcard stageC/engine/*.h) $(wildcard stageB/engine/*.h) $(HELPERS)
+ENGINE_C_V0   = stageC/engine/vwap.c stageC/engine/ohlc.c stageC/engine/sma.c stageC/engine/sma_naive.c stageC/engine/signal.c helper_function/trade_io.c
+ENGINE_C_CORE = stageC/engine/stream_engine.c stageC/engine/fixed_engine.c stageC/engine/rival.c $(ENGINE_C_V0) stageC/engine/read_trade_fx.c stageC/engine/vwap_fx.c stageC/engine/sma_fx.c stageC/engine/signal_fx.c
+ENGINE_C        = $(ENGINE_C_CORE) stageC/engine/trades_fx_fread.c stageC/engine/ohlc_fx.c
+ENGINE_C_MALLOC = $(ENGINE_C_CORE) stageC/engine/trades_fx_malloc.c stageC/engine/ohlc_fx.c
+ENGINE_C_ASM    = $(ENGINE_C_CORE) stageC/engine/trades_fx_fread.c stageC/engine/ohlc_fx.s
+ENGINE_C_H  = $(wildcard stageC/engine/*.h) $(HELPERS) helper_function/trade_io.h
 
 # extra flags for Stage C, e.g. make stageC CFLAGS_C="-O2 -mcpu=cortex-a76" on the Pi
 CFLAGS_C = -O2 -Wall
@@ -75,7 +92,12 @@ ASM_TAG = x86-64
 else
 ASM_TAG = $(shell uname -m)
 endif
-ASM_SRC = stageC/engine/engine.c stageB/engine/sma_fx.c stageB/engine/signal_fx.c stageB/engine/vwap_fx.c stageB/engine/ohlc_fx.c
+ASM_SRC = stageC/engine/fixed_engine.c stageC/engine/sma_fx.c stageC/engine/signal_fx.c stageC/engine/vwap_fx.c stageC/engine/ohlc_fx.c
+
+# the _asm variant is AArch64 assembly, so it is only part of stageC on the Pi
+ifeq ($(ASM_TAG),aarch64)
+STAGEC += $(STAGEC_REPLAY_ASM) $(STAGEC_RIVAL_ASM)
+endif
 
 # ---- ladder (src/) ----
 # Every version is built from src/ with the same flags; only the files linked change.
@@ -87,6 +109,7 @@ ASM_SRC = stageC/engine/engine.c stageB/engine/sma_fx.c stageB/engine/signal_fx.
 # V5  main_stageB_fixed  fixed-point prices, fixed-size global array
 # V6  main_stageB_fixed  fixed-point prices, malloc'd array (Stage C)
 # V7  main_stageB_fixed  same array, whole file read with one fread (Lucas's feed)
+# V8  main_stageB_fixed  V7 + hand-written AArch64 OHLC (Yong Sheng), Raspberry Pi only
 LADDER_V0 = bin/v0_stageA_naive_sma$(EXE)
 LADDER_V1 = bin/v1_stageAplus_own_reader$(EXE)
 LADDER_V2 = bin/v2_stageAplus_fast_parser$(EXE)
@@ -95,16 +118,23 @@ LADDER_V4 = bin/v4_stageB_running_sma$(EXE)
 LADDER_V5 = bin/v5_stageB_fixed_point$(EXE)
 LADDER_V6 = bin/v6_stageC_malloc$(EXE)
 LADDER_V7 = bin/v7_stageC_fread$(EXE)
+LADDER_V8 = bin/v8_stageC_asm_ohlc$(EXE)
 LADDER = $(LADDER_V0) $(LADDER_V1) $(LADDER_V2) $(LADDER_V3) $(LADDER_V4) $(LADDER_V5) $(LADDER_V6) $(LADDER_V7)
 
 CFLAGS_L   = -O2 -Wall
 SRC_H      = $(wildcard src/*.h src/*/*.h) $(HELPERS)
 SRC_ENGINE = src/engine/vwap.c src/engine/ohlc.c src/engine/signal.c src/engine/report.c
-SRC_FX     = src/engine_fx/vwap_fx.c src/engine_fx/ohlc_fx.c src/engine_fx/sma_fx.c src/engine_fx/signal_fx.c src/engine/report.c
+SRC_FX_CORE = src/engine_fx/vwap_fx.c src/engine_fx/sma_fx.c src/engine_fx/signal_fx.c src/engine/report.c
+SRC_FX     = $(SRC_FX_CORE) src/engine_fx/v5-v7_ohlc_fx.c
+
+# V8 is AArch64 assembly, so it is only part of the ladder on the Pi (uname -m = aarch64)
+ifeq ($(ASM_TAG),aarch64)
+LADDER += $(LADDER_V8)
+endif
 
 ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER) $(BENCHMARK)
 
-.PHONY: all stage0 stageA plotA stageC test_parser asm ladder benchmark clean
+.PHONY: all stage0 stageA plotA stageC asm ladder benchmark clean
 
 all: stage0 stageA stageC ladder
 
@@ -141,17 +171,26 @@ stageC: $(STAGEC)
 $(STAGEC_MALLOC): stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageC/engine/trades_malloc.h $(TRADE_IO)
 	$(CC) $(CFLAGS_C) stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageB/engine/vwap.c stageB/engine/ohlc.c stageB/engine/sma.c stageB/engine/signal.c stageB/engine/report.c helper_function/trade_io.c -o $@
 
-$(STAGEC_REPLAY): stageC/stageC_replay.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) -o $@
+# default variant: fread loader + C kernels (= ladder V7)
+$(STAGEC_REPLAY): stageC/stageC_replay.c $(ENGINE_C) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C) -o $@
 
-$(STAGEC_RIVAL): stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_B_DBL) $(ENGINE_B_FX) -lm -o $@
+$(STAGEC_RIVAL): stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C) -lm -o $@
 
-# parser check: ./stageC/test_parser data/stress_full.csv
-test_parser: $(STAGEC_TEST)
+# _malloc variant: fgets loader, file read twice (= ladder V6)
+$(STAGEC_REPLAY_MALLOC): stageC/stageC_replay.c $(ENGINE_C_MALLOC) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C_MALLOC) -o $@
 
-$(STAGEC_TEST): stageC/test_parser.c stageC/engine/feed.c stageC/engine/fast_parse.c $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/test_parser.c stageC/engine/feed.c stageC/engine/fast_parse.c -o $@
+$(STAGEC_RIVAL_MALLOC): stageC/stageC_rival.c $(ENGINE_C_MALLOC) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C_MALLOC) -lm -o $@
+
+# _asm variant: V7 with the hand-written AArch64 ohlc_fx.s (= ladder V8, Pi only)
+$(STAGEC_REPLAY_ASM): stageC/stageC_replay.c $(ENGINE_C_ASM) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C_ASM) -o $@
+
+$(STAGEC_RIVAL_ASM): stageC/stageC_rival.c $(ENGINE_C_ASM) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C_ASM) -lm -o $@
 
 # gcc -S -O2 for each fixed-point kernel -> stageC/asm/<name>_<machine>_O2.s
 asm:
@@ -174,14 +213,17 @@ $(LADDER_V3): src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/
 $(LADDER_V4): src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/v2-v4_read_trade_fast.c $(SRC_ENGINE) src/engine/v4_sma_running.c $(SRC_H)
 	$(CC) $(CFLAGS_L) src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/v2-v4_read_trade_fast.c $(SRC_ENGINE) src/engine/v4_sma_running.c -o $@
 
-$(LADDER_V5): src/v5-v7_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) $(SRC_H)
-	$(CC) $(CFLAGS_L) src/v5-v7_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) -o $@
+$(LADDER_V5): src/v5-v8_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) -o $@
 
-$(LADDER_V6): src/v5-v7_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) $(SRC_H)
-	$(CC) $(CFLAGS_L) src/v5-v7_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) -o $@
+$(LADDER_V6): src/v5-v8_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) -o $@
 
-$(LADDER_V7): src/v5-v7_main_stageB_fixed.c src/store/v7_trades_fx_fread.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) $(SRC_H)
-	$(CC) $(CFLAGS_L) src/v5-v7_main_stageB_fixed.c src/store/v7_trades_fx_fread.c src/reader/v5-v7_read_trade_fx.c $(SRC_FX) -o $@
+$(LADDER_V7): src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) -o $@
+
+$(LADDER_V8): src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c src/engine_asm/v8_ohlc_fx.s $(SRC_FX_CORE) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX_CORE) src/engine_asm/v8_ohlc_fx.s -o $@
 
 benchmark: $(BENCHMARK)
 
