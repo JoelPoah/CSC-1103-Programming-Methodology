@@ -47,8 +47,8 @@ Pi run.
 
 | Engine @ 1000× | processing avg | avg latency | worst latency | max lag |
 |---|---|---|---|---|
-| v0  | 1.207 µs (1207.0 ns) | 225.7 µs | 9.768 ms | 9.767 ms |
-| mem | 0.059 µs (58.9 ns) | 6.28 µs | 0.382 ms | 0.382 ms |
+| v0  | 1.193 µs (1193.0 ns) | 220.1 µs | 9.591 ms | 9.590 ms |
+| mem | 0.051 µs (50.6 ns) | 5.84 µs | 0.353 ms | 0.353 ms |
 
 **Explain the difference:** ____
 
@@ -72,7 +72,7 @@ Pi run.
 | | signals won (of total) | P&L (USDT) |
 |---|---|---|
 | v0  | 0 of 37,063 | +207,415.12 |
-| mem | 37,059 of 37,063 | +209,214.42 |
+| mem | 37,060 of 37,063 | +209,214.42 |
 | **Money lost** | | +1,799.30 |
 
 **Explain the difference:** ____
@@ -93,6 +93,6 @@ Pi run.
 *Reason:* you win a signal when your reaction time is shorter than R. So each version
 starts winning when R grows past that version's processing time.
 
-**Result:** v0 starts winning at R ≈ 1.26 µs (0 % at 1.00 µs, 95.7 % at 1.259 µs); mem at R ≈ ≤ 0.1 µs (99.9 % already at the smallest R tested, 100 % from 0.2 µs) (from `rival_sweep.png`).
+**Result:** v0 starts winning at R ≈ 1.26 µs (0 % at 1.00 µs, 97.3–97.6 % at 1.259 µs); mem at R ≈ ≤ 0.1 µs (99.6–99.8 % already at the smallest R tested, 100 % from 0.251 µs) (from `rival_sweep.png`).
 
 **Explain the difference:** ____
