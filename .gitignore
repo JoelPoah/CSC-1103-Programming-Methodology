@@ -57,3 +57,8 @@ data/
 # ladder executables built by "make ladder" (Linux / Pi names; .exe is covered above)
 bin/*
 !bin/.gitkeep
+
+# Efficiency ladder benchmark (benchmark/): each member's own results, report and
+# test output stay local, plus the built tool (Linux/Pi name; .exe is covered above)
+benchmark/results/
+benchmark/ladder_bench
