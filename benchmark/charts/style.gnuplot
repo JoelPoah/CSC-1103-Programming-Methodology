@@ -17,6 +17,7 @@ set key top right textcolor rgb "#0b0b0b" box lc rgb "#e4e3df" opaque
 set style fill solid 1.0 border rgb "#fcfcfb"  # thin light gap between bars
 set xtics rotate by 30 right
 set bmargin 9
+set lmargin 16                                 # room for the first rotated x label
 
 # one colour per program / series, always in this order (colour-blind checked)
 colours = "#2a78d6 #eb6834 #1baf7a #eda100 #e87ba4 #008300 #6250d6 #e34948"

@@ -1,9 +1,13 @@
 /*
  * versions.c - WHAT the benchmark measures
  *
- * Every rung of the efficiency ladder is one Program below, built with each
- * Flag. The stage programs are compiled and run exactly as they are in the
- * repo; only the files linked and the gcc flags change.
+ * Every rung of the efficiency ladder is one Program below: the SAME programs
+ * that "make ladder" builds into bin/ from src/ (see the Makefile). The name
+ * and the source files of each are copied from its Makefile rule, so the -O2
+ * build here is the build "make" gives. The benchmark compiles each one again
+ * with every Flag; the programs themselves are never changed.
+ *
+ * If a ladder rule in the Makefile changes, change the matching entry here.
  */
 #include "bench.h"
 
@@ -19,58 +23,74 @@ const char *DATA_FILE = "data/group_data/stress_full.csv";
 const char *DATA_KEY  = "stress_full";
 #endif
 
+/* the Makefile's SRC_ENGINE, SRC_FX_CORE and SRC_FX */
+#define SRC_ENGINE  "src/engine/vwap.c src/engine/ohlc.c src/engine/signal.c src/engine/report.c"
+#define SRC_FX_CORE "src/engine_fx/vwap_fx.c src/engine_fx/sma_fx.c src/engine_fx/signal_fx.c src/engine/report.c"
+#define SRC_FX      SRC_FX_CORE " src/engine_fx/v5-v7_ohlc_fx.c"
+
+/* V0-V2 take the dataset as an argument and only process that one, so they are
+ * timed from outside. V3-V8 always run test20, dev_1M and stress_full in one
+ * go, so they are timed by their own now_ns() Load + Process lines. */
+#define STREAM_V0  DS("stress", "dev"),     "test20", 0
+#define STREAM_V12 DS("--stress", "--dev"), "--test", 0
+#define IN_MEMORY  DS("", "dev"),           NULL,     1
+
 const Program PROGRAMS[] = {
-    { "stageA",
+    { "v0_stageA_naive_sma",
       "Version 0: helper library (fgets + sscanf), double prices, naive SMA, streams the file",
-      "stageA/stageA_manual.c stageA/engine/vwap.c stageA/engine/ohlc.c stageA/engine/sma.c "
-      "stageA/engine/signal.c stageA/engine/report.c helper_function/trade_io.c",
-      NULL, NULL, NULL, NULL, DS("stress", "dev"), "test20", 0 },
+      "src/v0_main_stageA.c " SRC_ENGINE " src/engine/v0-v3_sma_naive.c helper_function/trade_io.c",
+      STREAM_V0, 0 },
 
-    { "stageA_plus",
-      "own pointer-based read_trade() + digit parser instead of sscanf, running-sum SMA",
-      "stageA_plus/stageA_plus.c stageA_plus/fast_reader.c stageA_plus/engine/vwap.c "
-      "stageA_plus/engine/ohlc.c stageA_plus/engine/sma.c stageA_plus/engine/signal.c "
-      "stageA_plus/engine/report.c",
-      NULL, NULL, NULL, NULL, DS("--stress", "--dev"), "--test", 0 },
+    { "v1_stageAplus_own_reader",
+      "own read_trade() through pointers, still fgets + sscanf",
+      "src/v1-v2_main_stageAplus.c src/reader/v1_read_trade_sscanf.c " SRC_ENGINE " src/engine/v0-v3_sma_naive.c",
+      STREAM_V12, 0 },
 
-    /* the Stage B/C programs always run test20, dev_1M and stress_full in one go,
-     * so they are timed by their own now_ns() Load + Process lines */
-    { "stageB_inmem",
-      "whole file loaded into a static array (helper reader), processed from memory; double, running-sum SMA",
-      "stageB/stageB_inmem.c stageB/engine/trades.c stageB/engine/vwap.c stageB/engine/signal.c "
-      "stageB/engine/report.c helper_function/trade_io.c",
-      "stageB/engine/sma.c", "stageB/engine/ohlc.c", "assembly/sma.s", "assembly/ohlc.s",
-      DS("", "dev"), NULL, 1 },
+    { "v2_stageAplus_fast_parser",
+      "digit-by-digit parser instead of sscanf",
+      "src/v1-v2_main_stageAplus.c src/reader/v2-v4_read_trade_fast.c " SRC_ENGINE " src/engine/v0-v3_sma_naive.c",
+      STREAM_V12, 0 },
 
-    { "stageB_fixed",
-      "static array + fixed-point long long prices (cents); crossover compares sums, no division",
-      "stageB/stageB_fixed.c stageB/engine/trades_fx.c stageB/engine/vwap_fx.c "
-      "stageB/engine/signal_fx.c stageB/engine/signal.c stageB/engine/report.c helper_function/trade_io.c",
-      "stageB/engine/sma_fx.c", "stageB/engine/ohlc_fx.c", "assembly/sma_fx.s", "assembly/ohlc_fx.s",
-      "", NULL, 1 },
+    { "v3_stageB_in_memory",
+      "whole file loaded into a global array (fast parser), then processed from memory",
+      "src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/v2-v4_read_trade_fast.c "
+      SRC_ENGINE " src/engine/v0-v3_sma_naive.c",
+      IN_MEMORY, 0 },
 
-    { "stageC_malloc",
-      "as stageB_inmem, but the array is malloc'd to fit the file (file read twice: count, then fill)",
-      "stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageB/engine/vwap.c "
-      "stageB/engine/signal.c stageB/engine/report.c helper_function/trade_io.c",
-      "stageB/engine/sma.c", "stageB/engine/ohlc.c", "assembly/sma.s", "assembly/ohlc.s",
-      DS("", "dev"), NULL, 1 },
+    { "v4_stageB_running_sma",
+      "running-sum SMA instead of the naive SMA",
+      "src/v3-v4_main_stageB_inmem.c src/store/v3-v4_trades.c src/reader/v2-v4_read_trade_fast.c "
+      SRC_ENGINE " src/engine/v4_sma_running.c",
+      IN_MEMORY, 0 },
+
+    { "v5_stageB_fixed_point",
+      "fixed-point long long prices, parsed straight to fixed-point; fixed-size global array",
+      "src/v5-v8_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v8_read_trade_fx.c " SRC_FX,
+      IN_MEMORY, 0 },
+
+    { "v6_stageC_malloc",
+      "array malloc'd to fit the file (file read twice: count, then fill)",
+      "src/v5-v8_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/reader/v5-v8_read_trade_fx.c " SRC_FX,
+      IN_MEMORY, 0 },
+
+    { "v7_stageC_fread",
+      "whole file read with one fread, then parsed in memory",
+      "src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c " SRC_FX,
+      IN_MEMORY, 0 },
+
+    { "v8_stageC_asm_ohlc",
+      "V7 with the hand-written AArch64 OHLC in place of the C one (Raspberry Pi only)",
+      "src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c "
+      SRC_FX_CORE " src/engine_asm/v8_ohlc_fx.s",
+      IN_MEMORY, 1 },
 };
 
 const Flag FLAGS[] = {
     { "O0",     "-O0",                  0 },
     { "O1",     "-O1",                  0 },
-    { "O2",     "-O2",                  0 },
+    { "O2",     "-O2",                  0 },     /* what "make ladder" uses (CFLAGS_L) */
     { "O3",     "-O3",                  0 },
     { "O3_a76", "-O3 -mcpu=cortex-a76", 1 },     /* Cortex-A76 = the Pi 5's CPU */
-};
-
-/* which engine files come from assembly/ instead of C (Pi only) */
-const Variant VARIANTS[] = {
-    { "c",    "C",              "C",                    0, 0 },
-    { "sma",  "sma.s",          "sma_fx.s",             1, 0 },
-    { "ohlc", "ohlc.s",         "ohlc_fx.s",            0, 1 },
-    { "both", "sma.s + ohlc.s", "sma_fx.s + ohlc_fx.s", 1, 1 },
 };
 
 const PyScript PY_SCRIPTS[] = {
@@ -82,5 +102,4 @@ const PyScript PY_SCRIPTS[] = {
 
 const int N_PROGRAMS = sizeof PROGRAMS / sizeof PROGRAMS[0];
 const int N_FLAGS    = sizeof FLAGS / sizeof FLAGS[0];
-const int N_VARIANTS = sizeof VARIANTS / sizeof VARIANTS[0];
 const int N_PY       = sizeof PY_SCRIPTS / sizeof PY_SCRIPTS[0];

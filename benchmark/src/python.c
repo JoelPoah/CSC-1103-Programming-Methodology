@@ -1,6 +1,6 @@
 /*
  * python.c - stageA_Python.py vs stageA_Python_numpy.py, then the faster one
- * vs stageA.c (Version 0) and vs the fastest C version on this machine.
+ * vs V0 in C (Version 0) and vs the fastest C version on this machine.
  *
  * Each script's own "bench" mode runs stress_full BENCH_RUNS (5) times in one
  * process and prints "run N: X s" (time.perf_counter_ns). Those are the runs.
@@ -12,7 +12,7 @@
 void run_python(void) {
     char dir[PATH_LEN], raw[PATH_LEN], path[PATH_LEN], line[512], version[128], title[256];
     Result c_rows[MAX_VERSIONS];
-    const Result *stageA, *fastest_c;
+    const Result *base, *fastest_c;
     Result *py[2] = { NULL, NULL }, *faster = NULL, *slower = NULL;
     Bar bars[6];
     int i, n, nc;
@@ -75,14 +75,14 @@ void run_python(void) {
     else if (py[1] && py[1]->ok) faster = py[1];
     snprintf(path, sizeof path, "%s/%s/c_results.csv", ROOT, MACHINE);
     nc = read_csv(path, c_rows, MAX_VERSIONS);
-    stageA = find_id(c_rows, nc, "stageA_O2");
+    base = find_id(c_rows, nc, BASE_ID);
     fastest_c = fastest(c_rows, nc);
     for (i = 0; i < N_PY; i++)
-        if (py[i] && py[i]->ok && stageA) py[i]->speedup = stageA->st.median / py[i]->st.median;
+        if (py[i] && py[i]->ok && base) py[i]->speedup = base->st.median / py[i]->st.median;
 
     /* STEP 3 - logs, csv, summary */
     for (i = 0; i < N_PY; i++)
-        if (py[i] && py[i]->ok) write_version_log(py[i], dir, stageA ? stageA->st.median : 0);
+        if (py[i] && py[i]->ok) write_version_log(py[i], dir, base ? base->st.median : 0);
     snprintf(path, sizeof path, "%s/python_results.csv", dir);
     write_csv(path, 1);
 
@@ -99,17 +99,17 @@ void run_python(void) {
             fmt_ms(py[i]->st.mean, b, sizeof b);
             fprintf(f, "%-26s median %10s   mean %10s   %d runs\n", py[i]->label, a, b, py[i]->n);
         }
-        if (stageA) fprintf(f, "%-26s median %8.1f ms   (C Version 0, from ../c_results.csv)\n", "stageA.c -O2", stageA->st.median);
+        if (base) fprintf(f, "%-26s median %8.1f ms   (C Version 0, from ../c_results.csv)\n", BASE_LABEL, base->st.median);
         else        fprintf(f, "(no ../c_results.csv yet: run './benchmark/ladder_bench c' first)\n");
         fprintf(f, "\n");
         if (faster && slower)
             fprintf(f, "1) %s is the FASTER Python version: %.2fx faster than %s.\n",
                     faster->label, slower->st.median / faster->st.median, slower->label);
-        if (faster && stageA) {
-            if (stageA->st.median <= faster->st.median)
-                fprintf(f, "2) stageA.c (-O2) is %.2fx faster than %s.\n", faster->st.median / stageA->st.median, faster->label);
+        if (faster && base) {
+            if (base->st.median <= faster->st.median)
+                fprintf(f, "2) " BASE_LABEL " (C) is %.2fx faster than %s.\n", faster->st.median / base->st.median, faster->label);
             else
-                fprintf(f, "2) %s is %.2fx faster than stageA.c (-O2).\n", faster->label, stageA->st.median / faster->st.median);
+                fprintf(f, "2) %s is %.2fx faster than " BASE_LABEL " (C).\n", faster->label, base->st.median / faster->st.median);
         }
         if (faster && fastest_c)
             fprintf(f, "3) The fastest C version here (%s, %.1f ms) is %.1fx faster than %s.\n",
@@ -122,10 +122,10 @@ void run_python(void) {
     /* STEP 4 - charts */
     snprintf(dir, sizeof dir, "%s/%s/python/charts", ROOT, MACHINE);
     n = 0;
-    if (stageA) {
-        snprintf(bars[n].label, 96, "stageA.c -O2 (Version 0)");
-        bars[n].value = stageA->st.median; bars[n].colour = COLOURS[0];
-        fmt_ms(stageA->st.median, bars[n].text, 32); n++;
+    if (base) {
+        snprintf(bars[n].label, 96, BASE_LABEL " (Version 0)");
+        bars[n].value = base->st.median; bars[n].colour = COLOURS[0];
+        fmt_ms(base->st.median, bars[n].text, 32); n++;
     }
     for (i = 0; i < N_PY; i++) {
         if (!py[i] || !py[i]->ok) continue;
@@ -133,7 +133,7 @@ void run_python(void) {
         bars[n].value = py[i]->st.median; bars[n].colour = COLOURS[5 + i];
         fmt_ms(py[i]->st.median, bars[n].text, 32); n++;
     }
-    if (fastest_c && stageA && fastest_c != stageA) {
+    if (fastest_c && base && fastest_c != base) {
         snprintf(bars[n].label, 96, "fastest C: %s", fastest_c->label);
         bars[n].value = fastest_c->st.median; bars[n].colour = COLOURS[3];
         fmt_ms(fastest_c->st.median, bars[n].text, 32); n++;

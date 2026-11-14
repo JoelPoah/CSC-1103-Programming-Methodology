@@ -180,7 +180,7 @@ typedef struct {
 
 /* Read the numbers a program printed. section = NULL reads the whole file;
  * otherwise only the lines after an "=== ...section... ===" header, up to
- * the next header (the Stage B/C programs print test20, dev_1M and stress_full). */
+ * the next header (V3-V8 print test20, dev_1M and stress_full). */
 static Output read_output(const char *path, const char *section) {
     Output o;
     char line[1024];
@@ -292,10 +292,10 @@ int time_version(Result *r, int runs, const char *raw_dir) {
     remove(out);
 
     /* STEP 5 - one more run, not timed: peak memory, and on the Pi the perf stat
-     * hardware counters (for the whole program: Stage B/C also do test20 + dev_1M).
+     * hardware counters (for the whole program: V3-V8 also do test20 + dev_1M).
      * Not measured on the warm-up: on Windows the first launch of a freshly
      * compiled .exe reads its whole image in once (310 MB instead of 35 MB for
-     * stageB_inmem on dev_1M), so it would overstate the memory. */
+     * an in-memory version on dev_1M), so it would overstate the memory. */
     {
         char perf_file[PATH_LEN], prog[CMD_LEN];
         snprintf(perf_file, sizeof perf_file, "%s/%s_perf.txt", raw_dir, r->id);

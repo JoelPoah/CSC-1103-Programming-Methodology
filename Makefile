@@ -7,7 +7,8 @@
 #   make stageC     build stageC only (stageC_malloc, stageC_replay/_rival + _malloc, + _asm on the Pi)
 #   make asm        write the -O2 assembly of the fixed-point kernels to stageC/asm/
 #   make ladder     build every version V0-V7 from src/ into bin/ (+ V8 on the Pi)
-#   make benchmark  build the -O0..-O3 benchmark tool (benchmark/benchmark.c)
+#   make benchmark  build the ladder benchmark tool (benchmark/src/ -> benchmark/ladder_bench);
+#                   it times V0-V8 below at -O0..-O3, see benchmark/README.md
 #   make clean      delete all built executables
 #
 # Works with GNU make on Windows (MinGW gcc adds .exe automatically), Linux and macOS.
@@ -45,7 +46,10 @@ ENGINE_A_H = stageA/engine/vwap.h stageA/engine/ohlc.h stageA/engine/signal.h st
 TRADE_IO   = helper_function/trade_io.c helper_function/trade_io.h
 
 # ---- benchmark ----
-BENCHMARK = benchmark/benchmark$(EXE)
+# ladder_bench compiles the ladder versions itself (the same source files as the
+# ladder rules below, listed in benchmark/src/versions.c) at every optimisation level
+BENCHMARK     = benchmark/ladder_bench$(EXE)
+BENCHMARK_SRC = $(wildcard benchmark/src/*.c)
 
 # helper headers used by the stage0 programs
 HELPERS = helper_function/timing.h helper_function/led.h
@@ -227,9 +231,10 @@ $(LADDER_V8): src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c sr
 
 benchmark: $(BENCHMARK)
 
-# benchmark: gcc -O2 -Wall benchmark/benchmark.c -o benchmark/benchmark
-$(BENCHMARK): benchmark/benchmark.c helper_function/timing.h
-	$(CC) -O2 -Wall benchmark/benchmark.c -o $@
+# benchmark: gcc -O2 -Wall benchmark/src/*.c -o benchmark/ladder_bench -lm
+#   run it with:  ./benchmark/ladder_bench -m YOURNAME
+$(BENCHMARK): $(BENCHMARK_SRC) benchmark/src/bench.h helper_function/timing.h
+	$(CC) -O2 -Wall $(BENCHMARK_SRC) -o $@ -lm
 
 clean:
 ifeq ($(OS),Windows_NT)

@@ -1,19 +1,21 @@
 /*
  * main.c - efficiency ladder benchmark (Group 06)
  *
- * Builds every version of the engine, times each on stress_full.csv with
+ * Builds every version of the src/ ladder (V0-V7, + V8 on the Pi: the same
+ * programs "make ladder" builds), times each on stress_full.csv with
  * now_ns() (helper_function/timing.h), and writes logs, tables and charts.
- * The stage programs are NOT changed. See benchmark/README.md.
+ * The ladder programs are NOT changed. See benchmark/README.md.
  *
  * Build (from the project root):
- *   gcc -O2 -Wall benchmark/src/main.c benchmark/src/versions.c benchmark/src/run.c
+ *   make benchmark
+ *   or: gcc -O2 -Wall benchmark/src/main.c benchmark/src/versions.c benchmark/src/run.c
  *       benchmark/src/stats.c benchmark/src/ladder.c benchmark/src/python.c
  *       benchmark/src/compare.c benchmark/src/report.c benchmark/src/charts.c
  *       benchmark/src/device.c benchmark/src/final_report.c -o benchmark/ladder_bench -lm
  * Run (from the project root), always with your name (one set of results per member):
  *   ./benchmark/ladder_bench -m NAME            C ladder, Python, then REPORT.md
- *   ./benchmark/ladder_bench -m NAME c          C ladder only (+ assembly on the Pi)
- *   ./benchmark/ladder_bench -m NAME python     Python only (after "c": it compares to stageA.c)
+ *   ./benchmark/ladder_bench -m NAME c          C ladder only (+ V8 on the Pi)
+ *   ./benchmark/ladder_bench -m NAME python     Python only (after "c": it compares to V0)
  *   ./benchmark/ladder_bench -m NAME report     laptop vs Pi charts + REPORT.md from the saved
  *                                               results of both machines (no timing)
  * Options:

@@ -26,7 +26,7 @@ void run_compare(void) {
         nc[m] = read_csv(path, c_rows[m], MAX_VERSIONS);
         snprintf(path, sizeof path, "%s/%s/python/python_results.csv", ROOT, name[m]);
         np[m] = read_csv(path, py_rows[m], 4);
-        base[m] = find_id(c_rows[m], nc[m], "stageA_O2");
+        base[m] = find_id(c_rows[m], nc[m], BASE_ID);
         best_c[m] = fastest(c_rows[m], nc[m]);
         best_py[m] = fastest(py_rows[m], np[m]);
     }
@@ -63,9 +63,9 @@ void run_compare(void) {
         if (pi) fprintf(f, "  %-40s laptop %10.1f ms   Pi %10.1f ms   Pi takes %.2fx as long\n",
                         c_rows[0][i].label, c_rows[0][i].st.median, pi->st.median, pi->st.median / c_rows[0][i].st.median);
     }
-    fprintf(f, "\nMALLOC vs STATIC ARRAY at -O2 (stageC_malloc vs stageB_inmem)\n");
+    fprintf(f, "\nMALLOC vs STATIC ARRAY at -O2 (" MALLOC_NAME " vs " STATIC_NAME ")\n");
     for (m = 0; m < 2; m++) {
-        const Result *s = find_id(c_rows[m], nc[m], "stageB_inmem_O2"), *ml = find_id(c_rows[m], nc[m], "stageC_malloc_O2");
+        const Result *s = find_id(c_rows[m], nc[m], STATIC_NAME "_O2"), *ml = find_id(c_rows[m], nc[m], MALLOC_NAME "_O2");
         if (s && ml)
             fprintf(f, "  %-7s static %.1f ms (load %.1f, process %.1f) | malloc %.1f ms (load %.1f, process %.1f) | malloc %+.1f%%\n",
                     name[m], s->st.median, s->st_load.median, s->st_proc.median, ml->st.median,
@@ -94,7 +94,7 @@ void run_compare(void) {
     /* the fastest version on each machine, next to its Version 0 */
     for (m = 0, n = 0; m < 2; m++) {
         if (base[m]) {
-            snprintf(bars[n].label, 96, "%s: stageA -O2 (Version 0)", name[m]);
+            snprintf(bars[n].label, 96, "%s: " BASE_LABEL " (Version 0)", name[m]);
             bars[n].value = base[m]->st.median; bars[n].colour = COLOURS[m];
             fmt_ms(base[m]->st.median, bars[n].text, 32); n++;
         }
@@ -108,7 +108,7 @@ void run_compare(void) {
                "median time (ms, log scale)", bars, n, 1, 0);
 
     /* fastest C vs fastest Python on each machine */
-    snprintf(cols[0], 48, "stageA.c -O2 (Version 0)");
+    snprintf(cols[0], 48, BASE_LABEL " (Version 0)");
     snprintf(cols[1], 48, "fastest C");
     snprintf(cols[2], 48, "fastest Python");
     for (m = 0, n = 0; m < 2; m++) {

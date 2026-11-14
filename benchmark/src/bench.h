@@ -3,10 +3,10 @@
  *
  * One .c file per job (read them in this order):
  *   main.c      options, which machine this is, which parts to run
- *   versions.c  WHAT is measured: programs, flags, assembly swaps, Python scripts
+ *   versions.c  WHAT is measured: the ladder V0-V8 (as "make ladder" builds it), flags, Python scripts
  *   run.c       compile, run and time ONE version; read its output
  *   stats.c     median, mean, mode, min, max, standard deviation
- *   ladder.c    the C ladder (+ the assembly builds on the Pi)
+ *   ladder.c    the C ladder (+ V8, the assembly OHLC version, on the Pi)
  *   python.c    the two Python versions vs C
  *   compare.c   laptop vs Pi, fastest C vs fastest Python
  *   report.c    per-version logs, summary.txt, results .csv
@@ -26,7 +26,7 @@
 #endif
 
 #define MAX_RUNS        20
-#define MAX_VERSIONS    48
+#define MAX_VERSIONS    64
 #define PATH_LEN        512
 #define CMD_LEN         4096
 #define RESULTS_DIR     "benchmark/results"
@@ -42,28 +42,31 @@
 /* ---- versions.c ---- */
 typedef struct {
     const char *name, *rung;           /* rung = what this version changes */
-    const char *srcs;                  /* all sources except the SMA / OHLC engine files */
-    const char *sma_c, *ohlc_c;        /* C engine files (NULL: already in srcs) */
-    const char *sma_s, *ohlc_s;        /* assembly replacements (NULL: no assembly builds) */
+    const char *srcs;                  /* the source files, as in the Makefile's ladder rule */
     const char *args;                  /* arguments that make it process the timed dataset */
     const char *test_args;             /* test20-only arguments (NULL: test20 is the first
                                           section of every normal run) */
     int own_timer;                     /* 1: time = the program's own Load + Process lines */
+    int pi_only;                       /* 1: links AArch64 assembly, so it only builds on the Pi */
 } Program;
 typedef struct { const char *tag, *cflags; int pi_only; } Flag;
-typedef struct { const char *tag, *label, *label_fx; int sma, ohlc; } Variant;
 typedef struct { const char *name, *script, *about; } PyScript;
 
 extern const Program  PROGRAMS[];
 extern const Flag     FLAGS[];
-extern const Variant  VARIANTS[];      /* [0] plain C, [1] sma, [2] ohlc, [3] both */
 extern const PyScript PY_SCRIPTS[];
-extern const int N_PROGRAMS, N_FLAGS, N_VARIANTS, N_PY;
+extern const int N_PROGRAMS, N_FLAGS, N_PY;
 extern const char *DATA_FILE;          /* the timed dataset: stress_full.csv */
 extern const char *DATA_KEY;           /* its "=== ... ===" section name in the output */
-#define BASE_PROG 0                    /* stageA at ...                        */
+#define BASE_PROG 0                    /* V0 at ...                            */
 #define BASE_FLAG 2                    /* ... -O2 (FLAGS[2]) = Version 0, the baseline */
-#define ASM_FLAG  2                    /* assembly builds use -O2, as assembly/compare_all.sh */
+#define BASE_ID    "v0_stageA_naive_sma_O2"     /* its id in the results .csv  */
+#define BASE_LABEL "v0_stageA_naive_sma -O2"    /* and how it is printed       */
+/* two pairs of versions that differ in ONE thing; the summaries compare them */
+#define STATIC_NAME   "v5_stageB_fixed_point"   /* fixed-size global array ... */
+#define MALLOC_NAME   "v6_stageC_malloc"        /* ... vs malloc'd to fit the file */
+#define C_OHLC_NAME   "v7_stageC_fread"         /* OHLC in C ...               */
+#define ASM_OHLC_NAME "v8_stageC_asm_ohlc"      /* ... vs hand-written AArch64 (Pi) */
 
 /* ---- stats.c ---- */
 typedef struct {
@@ -78,8 +81,8 @@ void  fmt_mode(const Stats *s, char *out, size_t size);
 
 /* ---- one measured version (also one row of a results .csv) ---- */
 typedef struct {
-    char id[64], label[96], section[8];   /* section: "ladder", "asm" or "python" */
-    int prog, flag, variant;              /* python: prog = index in PY_SCRIPTS */
+    char id[64], label[96], section[8];   /* section: "ladder" or "python" */
+    int prog, flag;                       /* python: prog = index in PY_SCRIPTS */
     char exe[PATH_LEN], build_cmd[CMD_LEN], run_cmd[CMD_LEN];
     int ok; char error[200];
     int n;                                /* number of timed runs */
@@ -90,7 +93,7 @@ typedef struct {
     Stats st, st_load, st_proc;
     long long trades; char vwap[32]; int buys, sells;
     char test20[16];
-    double speedup;                       /* stageA -O2 median / this median, 0 = unknown */
+    double speedup;                       /* V0 -O2 median / this median, 0 = unknown */
     double peak_mb;                       /* peak memory of the warm-up run (0 = unknown) */
     int has_perf;                         /* 1: the perf stat numbers below are known (Pi) */
     double cycles, instructions, cache_refs, cache_misses;

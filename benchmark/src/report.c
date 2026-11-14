@@ -5,13 +5,16 @@
 #include "bench.h"
 #include <stdlib.h>
 #include <string.h>
-/* the plain-C build an assembly version is compared with */
-static const Result *plain_c_of(const Result *r) {
+
+/* the measured ladder version of program "name" at flag set f (NULL: none) */
+static const Result *version_of(const char *name, int f) {
     int i;
-    for (i = 0; i < n_results; i++)
-        if (strcmp(results[i].section, "ladder") == 0 && results[i].prog == r->prog &&
-            results[i].flag == r->flag && results[i].ok)
-            return &results[i];
+    for (i = 0; i < n_results; i++) {
+        const Result *r = &results[i];
+        if (r->ok && r->flag == f && strcmp(r->section, "ladder") == 0 &&
+            strcmp(PROGRAMS[r->prog].name, name) == 0)
+            return r;
+    }
     return NULL;
 }
 
@@ -33,7 +36,6 @@ void write_version_log(const Result *r, const char *dir, double base_ms) {
     } else {
         const Program *p = &PROGRAMS[r->prog];
         fprintf(f, "Rung:     %s\n", p->rung);
-        if (r->variant) fprintf(f, "Assembly: %s in place of the C engine file(s)\n", strstr(r->label, "+ ") + 2);
         fprintf(f, "Build:    %s\nRun:      %s%s\n", r->build_cmd, PIN, r->run_cmd);
         fprintf(f, p->own_timer
                 ? "Timing:   the program's own now_ns() Load time + Process time for the %s section\n"
@@ -96,18 +98,19 @@ void write_version_log(const Result *r, const char *dir, double base_ms) {
     }
 
     /* comparisons */
-    fprintf(f, "\nSPEEDUP vs stageA -O2 (Version 0)\n");
-    if (!python && r->prog == BASE_PROG && r->flag == BASE_FLAG && r->variant == 0)
+    fprintf(f, "\nSPEEDUP vs " BASE_LABEL " (Version 0)\n");
+    if (!python && r->prog == BASE_PROG && r->flag == BASE_FLAG)
         fprintf(f, "  this IS Version 0, the baseline\n");
     else if (base_ms > 0)
         fprintf(f, "  %.3fx  (%.1f / %.1f ms)%s\n", base_ms / r->st.median, base_ms, r->st.median,
                 base_ms < r->st.median ? "  -> slower than Version 0" : "");
     else
-        fprintf(f, "  n/a (stageA -O2 has not been measured on this machine)\n");
-    if (r->variant) {
-        const Result *c = plain_c_of(r);
+        fprintf(f, "  n/a (" BASE_LABEL " has not been measured on this machine)\n");
+    /* V8 is V7 with the OHLC in assembly: compare it with V7 at the same flag set */
+    if (!python && strcmp(PROGRAMS[r->prog].name, ASM_OHLC_NAME) == 0) {
+        const Result *c = version_of(C_OHLC_NAME, r->flag);
         if (c != NULL)
-            fprintf(f, "\nvs %s (plain C)\n  Process: %.3fx (%.1f -> %.1f ms)  <- what the assembly changes\n"
+            fprintf(f, "\nvs %s (OHLC in C)\n  Process: %.3fx (%.1f -> %.1f ms)  <- what the assembly changes\n"
                        "  Load + Process: %.3fx\n  Same answer as plain C: %s\n",
                     c->label, c->st_proc.median / r->st_proc.median, c->st_proc.median, r->st_proc.median,
                     c->st.median / r->st.median,
@@ -127,7 +130,7 @@ static const char *ipc_text(const Result *r) {
 void write_summary(const char *path, int runs) {
     const Result *best = NULL, *base = NULL;
     char t[5][32];
-    int i, s, f2;
+    int i, f2;
     FILE *f = fopen(path, "w");
     if (f == NULL) return;
 
@@ -135,29 +138,28 @@ void write_summary(const char *path, int runs) {
     fprintf(f, "=====================================================================================================\n");
     machine_info(f);
     fprintf(f, "Runs:      %d timed runs per version (+1 warm-up, not counted); medians compared\n", runs);
-    fprintf(f, "Time:      stageA, stageA_plus: whole program by now_ns();\n"
-               "           stageB_*, stageC_*: the program's own now_ns() Load + Process for %s\n", DATA_KEY);
-    fprintf(f, "Baseline:  stageA -O2 = Version 0\n");
+    fprintf(f, "Versions:  the src/ ladder, the same programs \"make ladder\" builds into bin/\n");
+    fprintf(f, "Time:      V0, V1, V2: whole program by now_ns();\n"
+               "           V3 and up: the program's own now_ns() Load + Process for %s\n", DATA_KEY);
+    fprintf(f, "Baseline:  " BASE_LABEL " = Version 0\n");
 
-    for (s = 0; s < 2; s++) {
-        fprintf(f, "\n%s\n", s == 0 ? "LADDER" : "ASSEMBLY (Pi): engine files from assembly/ in place of C");
-        fprintf(f, "%-40s %9s %9s %9s %9s %9s %9s %10s %8s %6s %8s %5s %s\n", "version", "median", "mean",
-                "min", "max", "process", "ns/trade", "speedup", "test20", "mode", "peak MB", "IPC", "signals");
-        for (i = 0; i < n_results; i++) {
-            const Result *r = &results[i];
-            if (strcmp(r->section, s == 0 ? "ladder" : "asm") != 0) continue;
-            if (!r->ok) { fprintf(f, "%-40s FAILED: %s\n", r->label, r->error); continue; }
-            if (r->prog == BASE_PROG && r->flag == BASE_FLAG && r->variant == 0) base = r;
-            if (best == NULL || r->st.median < best->st.median) best = r;
-            fmt_ms(r->st.median, t[0], 32);
-            fmt_ms(r->st.mean, t[1], 32);
-            fmt_ms(r->st.min, t[2], 32);
-            fmt_ms(r->st.max, t[3], 32);
-            fmt_ms(r->split ? r->st_proc.median : 0, t[4], 32);
-            fprintf(f, "%-40s %9s %9s %9s %9s %9s %9.1f %9.2fx %8s %6s %8.1f %5s %d/%d\n", r->label, t[0], t[1],
-                    t[2], t[3], t[4], r->trades ? r->st.median * 1e6 / (double)r->trades : 0, r->speedup,
-                    r->test20, r->st.mode_count >= 2 ? "yes" : "none", r->peak_mb, ipc_text(r), r->buys, r->sells);
-        }
+    fprintf(f, "\nLADDER\n");
+    fprintf(f, "%-44s %9s %9s %9s %9s %9s %9s %10s %8s %6s %8s %5s %s\n", "version", "median", "mean",
+            "min", "max", "process", "ns/trade", "speedup", "test20", "mode", "peak MB", "IPC", "signals");
+    for (i = 0; i < n_results; i++) {
+        const Result *r = &results[i];
+        if (strcmp(r->section, "ladder") != 0) continue;
+        if (!r->ok) { fprintf(f, "%-44s FAILED: %s\n", r->label, r->error); continue; }
+        if (r->prog == BASE_PROG && r->flag == BASE_FLAG) base = r;
+        if (best == NULL || r->st.median < best->st.median) best = r;
+        fmt_ms(r->st.median, t[0], 32);
+        fmt_ms(r->st.mean, t[1], 32);
+        fmt_ms(r->st.min, t[2], 32);
+        fmt_ms(r->st.max, t[3], 32);
+        fmt_ms(r->split ? r->st_proc.median : 0, t[4], 32);
+        fprintf(f, "%-44s %9s %9s %9s %9s %9s %9.1f %9.2fx %8s %6s %8.1f %5s %d/%d\n", r->label, t[0], t[1],
+                t[2], t[3], t[4], r->trades ? r->st.median * 1e6 / (double)r->trades : 0, r->speedup,
+                r->test20, r->st.mode_count >= 2 ? "yes" : "none", r->peak_mb, ipc_text(r), r->buys, r->sells);
     }
     fprintf(f, "\nmode: 'yes' = two or more runs equal at 1 ms (value in the version's log), 'none' = all differ.\n"
                "signals: BUY/SELL on %s. Version 0 (double, naive SMA) gives 20386/20176 on stress_full;\n"
@@ -166,32 +168,37 @@ void write_summary(const char *path, int runs) {
         fprintf(f, "\nFASTEST: %s, median %.1f ms = %.2fx faster than Version 0\n", best->label,
                 best->st.median, base ? base->st.median / best->st.median : 0);
 
-    /* stageC_malloc vs stageB_inmem: the same engine, only the array differs */
-    fprintf(f, "\nMALLOC vs STATIC ARRAY (stageC_malloc vs stageB_inmem, identical except the array)\n");
+    /* V6 vs V5: the same engine and parser, only the array differs */
+    fprintf(f, "\nMALLOC vs STATIC ARRAY (" MALLOC_NAME " vs " STATIC_NAME ", identical except the array)\n");
     for (f2 = 0; f2 < N_FLAGS; f2++) {
-        const Result *st = NULL, *ml = NULL;
-        for (i = 0; i < n_results; i++) {
-            const Result *r = &results[i];
-            if (!r->ok || r->flag != f2 || r->variant != 0 || strcmp(r->section, "ladder") != 0) continue;
-            if (strcmp(PROGRAMS[r->prog].name, "stageB_inmem") == 0) st = r;
-            if (strcmp(PROGRAMS[r->prog].name, "stageC_malloc") == 0) ml = r;
-        }
+        const Result *st = version_of(STATIC_NAME, f2), *ml = version_of(MALLOC_NAME, f2);
         if (st && ml)
             fprintf(f, "  %-21s static: load %8.1f + process %6.1f ms | malloc: load %8.1f + process %6.1f ms | malloc %+.1f%%\n",
                     FLAGS[f2].cflags, st->st_load.median, st->st_proc.median, ml->st_load.median,
                     ml->st_proc.median, 100 * (ml->st.median - st->st.median) / st->st.median);
     }
-    fprintf(f, "\nLogs: ladder/logs/, asm/logs/   Charts: ladder/charts/, asm/charts/\n");
+    /* V8 vs V7 (Pi): the same program, only the OHLC is hand-written assembly */
+    if (IS_PI) {
+        fprintf(f, "\nASSEMBLY OHLC vs C OHLC (" ASM_OHLC_NAME " vs " C_OHLC_NAME ", identical except the OHLC)\n");
+        for (f2 = 0; f2 < N_FLAGS; f2++) {
+            const Result *c = version_of(C_OHLC_NAME, f2), *a = version_of(ASM_OHLC_NAME, f2);
+            if (c && a)
+                fprintf(f, "  %-21s C: process %6.1f ms | assembly: process %6.1f ms | assembly %.3fx | same answer: %s\n",
+                        FLAGS[f2].cflags, c->st_proc.median, a->st_proc.median, c->st_proc.median / a->st_proc.median,
+                        strcmp(c->vwap, a->vwap) == 0 && c->buys == a->buys && c->sells == a->sells ? "yes" : "NO - check it");
+        }
+    }
+    fprintf(f, "\nLogs: ladder/logs/   Charts: ladder/charts/\n");
     fclose(f);
 }
 
-/* python = 0: the C versions (ladder + asm); 1: the Python versions */
+/* python = 0: the C ladder versions; 1: the Python versions */
 void write_csv(const char *path, int python) {
     int i;
     FILE *f = fopen(path, "w");
     if (f == NULL) { printf("cannot write %s\n", path); return; }
     fprintf(f, "section,id,label,program,flag,variant,runs,median_ms,mean_ms,mode_ms,min_ms,max_ms,sd_ms,"
-               "load_median_ms,process_median_ms,trades,ns_per_trade,trades_per_s,speedup_vs_stageA,"
+               "load_median_ms,process_median_ms,trades,ns_per_trade,trades_per_s,speedup_vs_v0,"
                "final_vwap,buys,sells,test20,peak_memory_mb,cycles,instructions,ipc,cache_references,cache_misses\n");
     for (i = 0; i < n_results; i++) {
         const Result *r = &results[i];
@@ -201,7 +208,7 @@ void write_csv(const char *path, int python) {
                    "%.1f,%.0f,%.0f,%.3f,%.0f,%.0f\n",
                 r->section, r->id, r->label,
                 is_py ? PY_SCRIPTS[r->prog].name : PROGRAMS[r->prog].name,
-                is_py ? "-" : FLAGS[r->flag].tag, is_py ? "python" : VARIANTS[r->variant].tag,
+                is_py ? "-" : FLAGS[r->flag].tag, is_py ? "python" : "c",
                 r->n, r->st.median, r->st.mean, r->st.mode_count >= 2 ? r->st.mode : 0,
                 r->st.min, r->st.max, r->st.sd, r->st_load.median, r->st_proc.median, r->trades,
                 r->trades ? r->st.median * 1e6 / (double)r->trades : 0,
@@ -235,11 +242,10 @@ int read_csv(const char *path, Result *rows, int max) {
         snprintf(r->section, sizeof r->section, "%s", col[0]);
         snprintf(r->id, sizeof r->id, "%s", col[1]);
         snprintf(r->label, sizeof r->label, "%s", col[2]);
-        r->prog = r->flag = r->variant = -1;                  /* names back to table indexes */
+        r->prog = r->flag = -1;                               /* names back to table indexes */
         for (k = 0; k < N_PROGRAMS; k++) if (strcmp(col[3], PROGRAMS[k].name) == 0) r->prog = k;
         for (k = 0; k < N_PY; k++)       if (strcmp(col[3], PY_SCRIPTS[k].name) == 0) r->prog = k;
         for (k = 0; k < N_FLAGS; k++)    if (strcmp(col[4], FLAGS[k].tag) == 0) r->flag = k;
-        for (k = 0; k < N_VARIANTS; k++) if (strcmp(col[5], VARIANTS[k].tag) == 0) r->variant = k;
         r->n = atoi(col[6]);
         r->st.n = r->n;
         r->st.median = atof(col[7]);

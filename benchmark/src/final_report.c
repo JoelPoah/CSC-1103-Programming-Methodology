@@ -1,7 +1,7 @@
 /*
  * final_report.c - put the results of BOTH machines into one Markdown report,
- * benchmark/results/REPORT.md: the device specs side by side, the ladder,
- * assembly and Python tables, the key results, and every chart.
+ * benchmark/results/<member>/REPORT.md: the device specs side by side, the
+ * ladder and Python tables, the key results, and every chart.
  *
  * Run it after the benchmark has run on the laptop and on the Pi (it also
  * works with only one machine's results):   ./benchmark/ladder_bench report
@@ -50,7 +50,7 @@ static void chart(FILE *f, const char *rel, const char *title) {
     if (file_exists(path)) fprintf(f, "![%s](%s)\n\n", title, rel);
 }
 
-/* one chart per stage: the same program at each optimisation level, labelled
+/* one chart per version: the same program at each optimisation level, labelled
  * with its median time and its speedup vs its own -O0 build.
  * Drawn from the saved results, into <machine>/ladder/charts/stage_<program>.png */
 static void stage_charts(FILE *f, int m) {
@@ -109,7 +109,7 @@ static void ladder_table(FILE *f, int m) {
                 r->prog >= 0 ? PROGRAMS[r->prog].rung : "", t[0], t[1], t[2], t[3], t[4],
                 r->trades ? r->st.median * 1e6 / (double)r->trades : 0,
                 r->st.median > 0 ? (double)r->trades / (r->st.median / 1000) : 0);
-        if (strcmp(r->id, "stageA_O2") == 0) fprintf(f, "1.00x (Version 0) | %s |\n", r->test20);
+        if (strcmp(r->id, BASE_ID) == 0) fprintf(f, "1.00x (Version 0) | %s |\n", r->test20);
         else fprintf(f, "**%.2fx** | %s |\n", r->speedup, r->test20);
     }
     fprintf(f, "\n");
@@ -140,29 +140,37 @@ static void memory_perf_table(FILE *f, int m) {
                    "They are in the Raspberry Pi 5 section.\n\n");
     else
         fprintf(f, "Hardware counters: `perf stat` on that same extra run, for the whole program "
-                   "(Stage B/C programs also load test20 and dev_1M in it). If a row says *not counted*, "
+                   "(V3 and up also load test20 and dev_1M in it). If a row says *not counted*, "
                    "run `sudo sysctl kernel.perf_event_paranoid=1` and benchmark again.\n\n");
 }
 
-/* the assembly table (Pi): each build vs the same program in plain C */
-static void asm_table(FILE *f, int m) {
-    char t[2][32], plain_id[64];
-    int i;
-    fprintf(f, "| Version | Median (load + process) | Process median | Process speedup vs plain C | Speedup vs V0 | test20 |\n");
-    fprintf(f, "|---|---:|---:|---:|---:|:---:|\n");
-    for (i = 0; i < nc[m]; i++) {
-        const Result *r = &c_rows[m][i], *c;
-        if (strcmp(r->section, "asm") != 0 || r->prog < 0 || r->flag < 0) continue;
-        snprintf(plain_id, sizeof plain_id, "%s_%s", PROGRAMS[r->prog].name, FLAGS[r->flag].tag);
-        c = find_id(c_rows[m], nc[m], plain_id);
-        fmt_ms(r->st.median, t[0], 32);
-        fmt_ms(r->st_proc.median, t[1], 32);
-        fprintf(f, "| `%s` | %s | %s | ", r->label, t[0], t[1]);
-        if (c && r->st_proc.median > 0) fprintf(f, "**%.2fx** | ", c->st_proc.median / r->st_proc.median);
-        else fprintf(f, "- | ");
-        fprintf(f, "%.2fx | %s |\n", r->speedup, r->test20);
+/* V8 vs V7 (Pi): the same program at each flag set, OHLC in assembly vs in C.
+ * Returns the number of rows, so the heading is only printed when there are any. */
+static int asm_table(FILE *f, int m, int print) {
+    char id[64], t[2][32];
+    int fl, rows = 0;
+    if (print) {
+        fprintf(f, "| Flags | `" C_OHLC_NAME "` process (OHLC in C) | `" ASM_OHLC_NAME "` process (OHLC in assembly) "
+                   "| Assembly speedup | Same answer |\n");
+        fprintf(f, "|---|---:|---:|---:|:---:|\n");
     }
-    fprintf(f, "\n");
+    for (fl = 0; fl < N_FLAGS; fl++) {
+        const Result *c, *a;
+        snprintf(id, sizeof id, C_OHLC_NAME "_%s", FLAGS[fl].tag);
+        c = find_id(c_rows[m], nc[m], id);
+        snprintf(id, sizeof id, ASM_OHLC_NAME "_%s", FLAGS[fl].tag);
+        a = find_id(c_rows[m], nc[m], id);
+        if (c == NULL || a == NULL || a->st_proc.median <= 0) continue;
+        rows++;
+        if (!print) continue;
+        fmt_ms(c->st_proc.median, t[0], 32);
+        fmt_ms(a->st_proc.median, t[1], 32);
+        fprintf(f, "| `%s` | %s | %s | **%.2fx** | %s |\n", FLAGS[fl].cflags, t[0], t[1],
+                c->st_proc.median / a->st_proc.median,
+                strcmp(c->vwap, a->vwap) == 0 && c->buys == a->buys && c->sells == a->sells ? "yes" : "NO");
+    }
+    if (print) fprintf(f, "\nProcess time is compared because the OHLC is only used in the engine loop.\n\n");
+    return rows;
 }
 
 /* "`a` is 1.55x faster than `b`", whichever of the two is faster */
@@ -202,10 +210,10 @@ static void python_vs_numpy_chart(FILE *f, int m) {
 }
 
 static void python_table(FILE *f, int m) {
-    const Result *stageA = find_id(c_rows[m], nc[m], "stageA_O2");
-    char t[5][32], cmp[160];
+    const Result *base = find_id(c_rows[m], nc[m], BASE_ID);
+    char t[5][32], cmp[200];
     int i;
-    fprintf(f, "| Version | Median | Mean | Mode | Min - Max | ns/trade | vs stageA.c -O2 |\n");
+    fprintf(f, "| Version | Median | Mean | Mode | Min - Max | ns/trade | vs `" BASE_LABEL "` (C) |\n");
     fprintf(f, "|---|---:|---:|---:|---:|---:|---:|\n");
     for (i = 0; i < np[m]; i++) {
         const Result *r = &py_rows[m][i];
@@ -216,16 +224,16 @@ static void python_table(FILE *f, int m) {
         fmt_ms(r->st.max, t[4], 32);
         fprintf(f, "| `%s` | **%s** | %s | %s | %s - %s | %.1f | ", r->label, t[0], t[1], t[2], t[3], t[4],
                 r->trades ? r->st.median * 1e6 / (double)r->trades : 0);
-        if (stageA) {
-            faster_text(cmp, sizeof cmp, r->label, r->st.median, "stageA.c", stageA->st.median);
+        if (base) {
+            faster_text(cmp, sizeof cmp, r->label, r->st.median, BASE_LABEL, base->st.median);
             fprintf(f, "%s |\n", cmp);
         } else {
             fprintf(f, "- |\n");
         }
     }
-    if (stageA) {
-        fmt_ms(stageA->st.median, t[0], 32);
-        fprintf(f, "| `stageA.c -O2` (Version 0, C) | **%s** | | | | | - |\n", t[0]);
+    if (base) {
+        fmt_ms(base->st.median, t[0], 32);
+        fprintf(f, "| `" BASE_LABEL "` (Version 0, C) | **%s** | | | | | - |\n", t[0]);
     }
     fprintf(f, "\n");
 }
@@ -236,15 +244,17 @@ static void key_results(FILE *f) {
     int m;
     for (m = 0; m < N_MACHINES; m++) {
         best[m] = fastest(c_rows[m], nc[m]);
-        base[m] = find_id(c_rows[m], nc[m], "stageA_O2");
+        base[m] = find_id(c_rows[m], nc[m], BASE_ID);
         py[m] = fastest(py_rows[m], np[m]);
     }
     for (m = 0; m < N_MACHINES; m++) {
-        const Result *s = find_id(c_rows[m], nc[m], "stageB_inmem_O2");
-        const Result *ml = find_id(c_rows[m], nc[m], "stageC_malloc_O2");
+        const Result *s = find_id(c_rows[m], nc[m], STATIC_NAME "_O2");
+        const Result *ml = find_id(c_rows[m], nc[m], MALLOC_NAME "_O2");
+        const Result *oc = find_id(c_rows[m], nc[m], C_OHLC_NAME "_O2");
+        const Result *oa = find_id(c_rows[m], nc[m], ASM_OHLC_NAME "_O2");
         if (best[m] == NULL) continue;
         fprintf(f, "- **%s - fastest version:** `%s`, %.1f ms", NAME[m], best[m]->label, best[m]->st.median);
-        if (base[m]) fprintf(f, " = **%.2fx** faster than Version 0 (`stageA -O2`, %.1f ms)",
+        if (base[m]) fprintf(f, " = **%.2fx** faster than Version 0 (`" BASE_LABEL "`, %.1f ms)",
                              base[m]->st.median / best[m]->st.median, base[m]->st.median);
         fprintf(f, ".\n");
         if (np[m] == 2) {
@@ -253,16 +263,20 @@ static void key_results(FILE *f) {
                     NAME[m], py[m]->label, slower->st.median / py[m]->st.median, slower->label);
         }
         if (py[m] && base[m]) {
-            char a[160], b[160];
-            faster_text(a, sizeof a, "stageA.c -O2", base[m]->st.median, py[m]->label, py[m]->st.median);
+            char a[200], b[200];
+            faster_text(a, sizeof a, BASE_LABEL, base[m]->st.median, py[m]->label, py[m]->st.median);
             faster_text(b, sizeof b, best[m]->label, best[m]->st.median, py[m]->label, py[m]->st.median);
             fprintf(f, "- **%s - C vs Python:** %s; %s.\n", NAME[m], a, b);
         }
         if (s && ml)
-            fprintf(f, "- **%s - malloc vs static array (-O2):** `stageC_malloc` %.1f ms vs `stageB_inmem` %.1f ms "
+            fprintf(f, "- **%s - malloc vs static array (-O2):** `" MALLOC_NAME "` %.1f ms vs `" STATIC_NAME "` %.1f ms "
                        "(%+.1f%%; load %.1f vs %.1f ms, process %.1f vs %.1f ms).\n",
                     NAME[m], ml->st.median, s->st.median, 100 * (ml->st.median - s->st.median) / s->st.median,
                     ml->st_load.median, s->st_load.median, ml->st_proc.median, s->st_proc.median);
+        if (oc && oa && oa->st_proc.median > 0)
+            fprintf(f, "- **%s - assembly OHLC vs C OHLC (-O2):** `" ASM_OHLC_NAME "` processes in %.1f ms vs "
+                       "`" C_OHLC_NAME "` %.1f ms (%.2fx).\n",
+                    NAME[m], oa->st_proc.median, oc->st_proc.median, oc->st_proc.median / oa->st_proc.median);
     }
     if (best[0] && best[1])
         fprintf(f, "- **Laptop vs Pi:** the fastest laptop version is %.2fx faster than the fastest Pi version.\n",
@@ -291,7 +305,9 @@ void run_final_report(void) {
     fprintf(f, "Made by `benchmark/ladder_bench report` from the saved results in this folder. "
                "Every time is the **median of %d runs on `%s`** (1 warm-up run first, not counted), "
                "measured with `now_ns()` from `helper_function/timing.h`. "
-               "Version 0 = `stageA -O2` (helper library, `double`, naive SMA).\n\n",
+               "The versions are the `src/` ladder, the same programs `make ladder` builds into `bin/`; "
+               "each is compiled again at every flag set. "
+               "Version 0 = `" BASE_LABEL "` (helper library, `double`, naive SMA).\n\n",
             nc[0] ? c_rows[0][0].n : nc[1] ? c_rows[1][0].n : 5, DATA_FILE);
 
     fprintf(f, "## 1. Test set-up\n\n| | %s | %s |\n|---|---|---|\n", NAME[0], NAME[1]);
@@ -302,8 +318,8 @@ void run_final_report(void) {
             if (!seen) fprintf(f, "| %s | %s | %s |\n", keys[m][i], device_value(0, keys[m][i]), device_value(1, keys[m][i]));
         }
     fprintf(f, "\n## 2. How each version was timed\n\n"
-               "- `stageA`, `stageA_plus`: `now_ns()` around the whole program (they only process the dataset).\n"
-               "- `stageB_inmem`, `stageB_fixed`, `stageC_malloc`: they always run test20, dev_1M and stress_full in one go, "
+               "- V0, V1, V2: `now_ns()` around the whole program (they only process the dataset).\n"
+               "- V3 and up: they always run test20, dev_1M and stress_full in one go, "
                "so the time is their own `now_ns()` **Load + Process** lines for the `%s` part.\n"
                "- Python: each script's own `bench` mode (5 runs, `time.perf_counter_ns`).\n"
                "- Correctness: every version's test20 Final VWAP and BUY/SELL count is checked against `test20_expected.txt`.\n"
@@ -328,20 +344,15 @@ void run_final_report(void) {
         chart(f, rel, "Compiler flags");
         snprintf(rel, sizeof rel, "%s/ladder/charts/ladder_load_vs_process.png", TAG[m]);
         chart(f, rel, "Load vs process");
-        fprintf(f, "### Each stage at each optimisation level\n\n");
+        fprintf(f, "### Each version at each optimisation level\n\n");
         stage_charts(f, m);
         fprintf(f, "### Memory and hardware counters (perf stat)\n\n");
         memory_perf_table(f, m);
         snprintf(rel, sizeof rel, "%s/ladder/charts/ladder_memory.png", TAG[m]);
         chart(f, rel, "Peak memory");
-        for (i = 0; i < nc[m]; i++) if (strcmp(c_rows[m][i].section, "asm") == 0) break;
-        if (i < nc[m]) {
-            fprintf(f, "### Hand-written assembly (`assembly/`) linked in place of the C engine files\n\n");
-            asm_table(f, m);
-            snprintf(rel, sizeof rel, "%s/asm/charts/asm_speedup_vs_plain_c.png", TAG[m]);
-            chart(f, rel, "Assembly vs plain C");
-            snprintf(rel, sizeof rel, "%s/asm/charts/asm_speedup_vs_stageA.png", TAG[m]);
-            chart(f, rel, "Assembly vs Version 0");
+        if (asm_table(f, m, 0) > 0) {
+            fprintf(f, "### Hand-written assembly OHLC (V8) vs the C OHLC (V7)\n\n");
+            asm_table(f, m, 1);
         }
     }
 
