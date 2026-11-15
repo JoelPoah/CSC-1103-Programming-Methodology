@@ -1,0 +1,5 @@
+== Massif peak (dev run)
+  v5_stageB_fixed_point: reserved (pages-as-heap) 324.997 MB, heap only 0.009 MB
+  v6_stageC_malloc: reserved (pages-as-heap) 36.999 MB, heap only 32.009 MB
+  v5_stageB_fixed_point (stress_full): reserved (pages-as-heap) 324.997 MB
+  v6_stageC_malloc (stress_full): reserved (pages-as-heap) 290.726 MB
