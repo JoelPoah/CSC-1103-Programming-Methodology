@@ -4,6 +4,8 @@
 #   ylab       y-axis label                     w, h       picture size in pixels
 #   logy       1 = log y axis                   ylo, yhi   smallest / largest value
 #   ref        > 0 draws a dashed line there (e.g. 1x = Version 0)
+#   xrot, bm   angle of the x labels and the bottom margin (text lines) they need
+#   dense      1 = many bars: the value on each bar is written upright
 
 set terminal pngcairo size w,h font "Arial,11" background rgb "#fcfcfb"
 set output out
@@ -15,8 +17,12 @@ set tics nomirror textcolor rgb "#52514e"
 set grid ytics lc rgb "#e4e3df" lw 1
 set key top right textcolor rgb "#0b0b0b" box lc rgb "#e4e3df" opaque
 set style fill solid 1.0 border rgb "#fcfcfb"  # thin light gap between bars
-set xtics rotate by 30 right
-set bmargin 9
+set xtics rotate by xrot right
+set bmargin bm
+
+# the value printed on each bar: upright when the bars are close together
+vallabel = dense ? "rotate by 90 left offset 0,0.4" : "offset 0,0.8"
+headroom = dense ? 1.35 : 1.18                 # space above the tallest bar for its value
 set lmargin 16                                 # room for the first rotated x label
 
 # one colour per program / series, always in this order (colour-blind checked)
@@ -25,19 +31,19 @@ colours = "#2a78d6 #eb6834 #1baf7a #eda100 #e87ba4 #008300 #6250d6 #e34948"
 if (logy) {
     # log axis with readable ticks: 1, 2, 5, 10, 20, 50, ...
     set logscale y
-    set yrange [ylo/2.5 : yhi*3]
+    set yrange [ylo/2.5 : yhi*(dense ? 5 : 3)]
     ticks = ""
     do for [e=-3:9] {
         do for [k=0:2] {
             t = (k == 0 ? 1 : k == 1 ? 2 : 5) * 10.0**e
-            if (t >= ylo/2.5 && t <= yhi*3) {
+            if (t >= ylo/2.5 && t <= yhi*(dense ? 5 : 3)) {
                 ticks = ticks . (strlen(ticks) > 0 ? ", " : "") . sprintf('"%g" %g', t, t)
             }
         }
     }
     eval "set ytics (" . ticks . ")"
 } else {
-    set yrange [0 : (ref > yhi ? ref : yhi) * 1.18]
+    set yrange [0 : (ref > yhi ? ref : yhi) * headroom]
 }
 
 if (ref > 0) {

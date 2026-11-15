@@ -23,10 +23,12 @@ const char *DATA_FILE = "data/group_data/stress_full.csv";
 const char *DATA_KEY  = "stress_full";
 #endif
 
-/* the Makefile's SRC_ENGINE, SRC_FX_CORE and SRC_FX */
+/* the Makefile's SRC_ENGINE, SRC_FX_BASE, SRC_FX_CORE, SRC_FX and SRC_V58 */
 #define SRC_ENGINE  "src/engine/vwap.c src/engine/ohlc.c src/engine/signal.c src/engine/report.c"
-#define SRC_FX_CORE "src/engine_fx/vwap_fx.c src/engine_fx/sma_fx.c src/engine_fx/signal_fx.c src/engine/report.c"
+#define SRC_FX_BASE "src/engine_fx/vwap_fx.c src/engine_fx/signal_fx.c src/engine/report.c"
+#define SRC_FX_CORE SRC_FX_BASE " src/engine_fx/sma_fx.c"
 #define SRC_FX      SRC_FX_CORE " src/engine_fx/v5-v7_ohlc_fx.c"
+#define SRC_V58     "src/v5-v8_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v8_read_trade_fx.c"
 
 /* V0-V2 take the dataset as an argument and only process that one, so they are
  * timed from outside. V3-V8 always run test20, dev_1M and stress_full in one
@@ -65,7 +67,7 @@ const Program PROGRAMS[] = {
 
     { "v5_stageB_fixed_point",
       "fixed-point long long prices, parsed straight to fixed-point; fixed-size global array",
-      "src/v5-v8_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v8_read_trade_fx.c " SRC_FX,
+      SRC_V58 " " SRC_FX,
       IN_MEMORY, 0 },
 
     { "v6_stageC_malloc",
@@ -78,11 +80,21 @@ const Program PROGRAMS[] = {
       "src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c " SRC_FX,
       IN_MEMORY, 0 },
 
-    { "v8_stageC_asm_ohlc",
-      "V7 with the hand-written AArch64 OHLC in place of the C one (Raspberry Pi only)",
-      "src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c "
-      SRC_FX_CORE " src/engine_asm/v8_ohlc_fx.s",
+    { "v8_stageB_asm_ohlc",
+      "V5 with the hand-written AArch64 OHLC in place of the C one (Raspberry Pi only)",
+      SRC_V58 " " SRC_FX_CORE " src/engine_asm/v8_ohlc_fx.s",
       IN_MEMORY, 1 },
+
+    { "v8_stageB_asm_sma",
+      "V5 with the hand-written AArch64 SMA in place of the C one (Raspberry Pi only)",
+      SRC_V58 " " SRC_FX_BASE " src/engine_fx/v5-v7_ohlc_fx.c src/engine_asm/v8_sma_fx.s",
+      IN_MEMORY, 1 },
+};
+
+/* each is ASM_BASE_NAME (V5) with one kernel swapped for assembly */
+const AsmVersion ASM_VERSIONS[] = {
+    { ASM_OHLC_NAME, "OHLC" },
+    { ASM_SMA_NAME,  "SMA"  },
 };
 
 const Flag FLAGS[] = {
@@ -103,3 +115,4 @@ const PyScript PY_SCRIPTS[] = {
 const int N_PROGRAMS = sizeof PROGRAMS / sizeof PROGRAMS[0];
 const int N_FLAGS    = sizeof FLAGS / sizeof FLAGS[0];
 const int N_PY       = sizeof PY_SCRIPTS / sizeof PY_SCRIPTS[0];
+const int N_ASM      = sizeof ASM_VERSIONS / sizeof ASM_VERSIONS[0];

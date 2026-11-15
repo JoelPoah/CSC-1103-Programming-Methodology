@@ -22,6 +22,7 @@ gcc -O2 -Wall benchmark/src/main.c benchmark/src/versions.c benchmark/src/run.c 
 
 ./benchmark/ladder_bench -m andrew            # everything: C ladder, Python, then the report
 ./benchmark/ladder_bench -m andrew c          # C ladder only (+ V8 on the Pi)
+./benchmark/ladder_bench -m andrew asm        # Pi only: just V5 and the two V8s (C vs assembly), same as "make benchmark_asm MEMBER=andrew"
 ./benchmark/ladder_bench -m andrew python     # Python only (run "c" first: it compares to V0)
 ./benchmark/ladder_bench -m andrew report     # REPORT.md + laptop-vs-Pi charts from saved results (no timing)
 ```
@@ -39,7 +40,7 @@ Options:
 **The machine is detected automatically** when the tool is compiled:
 - Windows → `laptop`.
 - 64-bit ARM Linux → `rpi`. This build adds the `-mcpu=cortex-a76` flag set
-  and V8 (the assembly OHLC version), and pins every run to core 2 with `taskset`.
+  and the two V8s (assembly OHLC, assembly SMA), and pins every run to core 2 with `taskset`.
 
 Build the tool on each machine; don't copy the program across.
 
@@ -63,7 +64,8 @@ Build the tool on each machine; don't copy the program across.
   V3 and up also load test20 and dev_1M on every run.
 - The laptop C ladder is 32 versions (8 programs × 4 flag sets) × 7 runs each
   (warm-up, 5 timed, 1 memory).
-- The Pi is 2–3× slower and runs 45 versions (V8 and a 5th flag set are added).
+- The Pi is 2–3× slower and runs 50 versions (the two V8s and a 5th flag set are added).
+- `asm` runs only 15 versions (V5 and the two V8s × 5 flag sets), a few minutes on the Pi.
 - Pure Python takes minutes per run.
 
 Plug in and leave the machine idle.
@@ -77,7 +79,7 @@ Plug in and leave the machine idle.
 | `src/versions.c` | **what is measured**: the ladder versions (as in the Makefile), flag sets, Python scripts. Edit here to add a rung |
 | `src/run.c` | compile, warm up, check test20, and time **one** version (`now_ns()`) |
 | `src/stats.c` | median, mean, mode, min, max, standard deviation |
-| `src/ladder.c` | the C ladder and its charts (+ V8 on the Pi) |
+| `src/ladder.c` | the C ladder and its charts (+ the two V8s on the Pi) |
 | `src/python.c` | the two Python versions vs C |
 | `src/compare.c` | laptop vs Pi, fastest C vs fastest Python |
 | `src/report.c` | per-version logs, `summary.txt`, the results `.csv` |
@@ -98,14 +100,25 @@ Plug in and leave the machine idle.
 | `v5_stageB_fixed_point` | fixed-point `long long` prices, parsed straight to fixed-point; fixed-size global array | same (Load + Process) |
 | `v6_stageC_malloc` | array `malloc`'d to fit the file (file read twice: count, then fill) | same (Load + Process) |
 | `v7_stageC_fread` | whole file read with one `fread`, then parsed in memory | same (Load + Process) |
-| `v8_stageC_asm_ohlc` (Pi only) | V7 with the hand-written AArch64 OHLC in place of the C one | same (Load + Process) |
+| `v8_stageB_asm_ohlc` (Pi only) | V5 with the hand-written AArch64 OHLC in place of the C one | same (Load + Process) |
+| `v8_stageB_asm_sma` (Pi only) | V5 with the hand-written AArch64 SMA in place of the C one | same (Load + Process) |
 | `stageA_Python.py`, `stageA_Python_numpy.py` | Stage A in Python / NumPy | each script's own `bench` mode (5 runs, `perf_counter_ns`); the whole process is also timed with `now_ns()` |
 
 * **Flag sets:** every C version is built at `-O0`, `-O1`, `-O2` and `-O3`. The Pi
   adds `-O3 -mcpu=cortex-a76`. `-O2` is what `make ladder` uses.
-* **Assembly (Pi only):** V8 is V7 with `src/engine_asm/v8_ohlc_fx.s` in place
-  of the C OHLC. It is compared with V7 at the same flag set on **Process
-  time**, the only part the assembly changes.
+* **Assembly (Pi only):** each V8 is V5 with **one** kernel in assembly
+  (V5, not V7: on the Pi V5's loader is faster than the `fread` one, so V5 is
+  the fastest C version there):
+  `v8_stageB_asm_ohlc` links `src/engine_asm/v8_ohlc_fx.s` in place of the C
+  OHLC, `v8_stageB_asm_sma` links `src/engine_asm/v8_sma_fx.s` in place of the
+  C SMA. Each is compared with V5 at the same flag set on **Process time**,
+  the only part the assembly changes. Below 1.000x means the assembly is
+  slower than the compiler's code.
+  * `make ladder_asm` builds just these two; `ladder_bench -m NAME asm` times
+    just V5 and these two, into `<member>/rpi/asm/` (same layout as the full
+    run, which it does not overwrite).
+  * The `.s` files are the same at every flag set. At `-O0` the C kernel is
+    unoptimised, so the assembly looks far better there; `-O2` is the fair row.
 * **Why V3 and up use their own timers:** those programs always run test20 →
   dev_1M → stress_full, and can't be told otherwise without editing them. So
   their time is their own `now_ns()` Load + Process for the stress section.
@@ -113,7 +126,7 @@ Plug in and leave the machine idle.
 * **Correctness:**
   * Every version's test20 result (Final VWAP + BUY/SELL) is checked against
     `test20_expected.txt` and shown as PASS/FAIL.
-  * V8 is checked to give the same answer as V7.
+  * Each V8 is checked to give the same answer as V5.
 * **Memory:** every version's peak memory, measured on one extra, untimed run after
   the timed runs. Not on the warm-up: on Windows the first launch of a freshly
   compiled `.exe` reads its whole image in once (we saw 310 MB instead of 35 MB).
@@ -146,7 +159,9 @@ benchmark/results/<member>/<laptop|rpi>/
                                   ladder_flags.png          time of every version, grouped by program
                                   ladder_load_vs_process.png
                                   ladder_memory.png         peak memory of every version
+                                  asm_vs_c_process.png      (Pi) process time: V5 vs each V8, per flag set
                                   stage_<program>.png       one per version: -O0/-O1/-O2/-O3 (+ -mcpu on the Pi), speedup vs its -O0
+    asm/                          (Pi, "asm" mode) summary.txt, c_results.csv, logs/, charts/ for V5 + the V8s only
     python/                       summary.txt, logs/, charts/python_vs_c_time.png
 benchmark/results/<member>/compare/       compare.txt, charts/laptop_vs_rpi_all_versions.png,
                                   charts/fastest_laptop_vs_rpi.png, charts/fastest_c_vs_fastest_python.png
