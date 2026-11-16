@@ -6,7 +6,7 @@
  *   versions.c  WHAT is measured: the ladder V0-V8 (as "make ladder" builds it), flags, Python scripts
  *   run.c       compile, run and time ONE version; read its output
  *   stats.c     median, mean, mode, min, max, standard deviation
- *   ladder.c    the C ladder (+ V8, the assembly OHLC version, on the Pi)
+ *   ladder.c    the C ladder (+ the two V8 assembly versions on the Pi)
  *   python.c    the two Python versions vs C
  *   compare.c   laptop vs Pi, fastest C vs fastest Python
  *   report.c    per-version logs, summary.txt, results .csv
@@ -51,22 +51,26 @@ typedef struct {
 } Program;
 typedef struct { const char *tag, *cflags; int pi_only; } Flag;
 typedef struct { const char *name, *script, *about; } PyScript;
+typedef struct { const char *name, *kernel; } AsmVersion;   /* kernel: "OHLC" or "SMA" */
 
 extern const Program  PROGRAMS[];
 extern const Flag     FLAGS[];
 extern const PyScript PY_SCRIPTS[];
-extern const int N_PROGRAMS, N_FLAGS, N_PY;
+extern const AsmVersion ASM_VERSIONS[];  /* the V8s: V5 with ONE kernel in assembly (Pi) */
+extern const int N_PROGRAMS, N_FLAGS, N_PY, N_ASM;
 extern const char *DATA_FILE;          /* the timed dataset: stress_full.csv */
 extern const char *DATA_KEY;           /* its "=== ... ===" section name in the output */
 #define BASE_PROG 0                    /* V0 at ...                            */
 #define BASE_FLAG 2                    /* ... -O2 (FLAGS[2]) = Version 0, the baseline */
 #define BASE_ID    "v0_stageA_naive_sma_O2"     /* its id in the results .csv  */
 #define BASE_LABEL "v0_stageA_naive_sma -O2"    /* and how it is printed       */
-/* two pairs of versions that differ in ONE thing; the summaries compare them */
+/* versions that differ in ONE thing; the summaries compare them */
 #define STATIC_NAME   "v5_stageB_fixed_point"   /* fixed-size global array ... */
 #define MALLOC_NAME   "v6_stageC_malloc"        /* ... vs malloc'd to fit the file */
-#define C_OHLC_NAME   "v7_stageC_fread"         /* OHLC in C ...               */
-#define ASM_OHLC_NAME "v8_stageC_asm_ohlc"      /* ... vs hand-written AArch64 (Pi) */
+#define ASM_BASE_NAME "v5_stageB_fixed_point"   /* OHLC and SMA in C ...       */
+#define ASM_BASE_V    "V5"                      /* its short name in headings   */
+#define ASM_OHLC_NAME "v8_stageB_asm_ohlc"      /* ... vs the OHLC in hand-written AArch64 (Pi) */
+#define ASM_SMA_NAME  "v8_stageB_asm_sma"       /* ... vs the SMA in hand-written AArch64 (Pi)  */
 
 /* ---- stats.c ---- */
 typedef struct {
@@ -119,7 +123,7 @@ void first_line(const char *cmd, char *out, size_t size);
 int  time_version(Result *r, int runs, const char *raw_dir);
 
 /* ---- ladder.c, python.c, compare.c, final_report.c ---- */
-void run_ladder(int runs);
+void run_ladder(int runs, int asm_only);  /* asm_only: just V5 and the V8s, into <machine>/asm/ */
 void run_python(void);
 void run_compare(void);
 void run_final_report(void);

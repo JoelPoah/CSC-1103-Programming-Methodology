@@ -144,32 +144,36 @@ static void memory_perf_table(FILE *f, int m) {
                    "run `sudo sysctl kernel.perf_event_paranoid=1` and benchmark again.\n\n");
 }
 
-/* V8 vs V7 (Pi): the same program at each flag set, OHLC in assembly vs in C.
- * Returns the number of rows, so the heading is only printed when there are any. */
-static int asm_table(FILE *f, int m, int print) {
+/* one V8 vs V5 (Pi): the same program at each flag set, one kernel (ASM_VERSIONS[k])
+ * in assembly vs in C. Returns the number of rows, so the heading is only printed
+ * when there are any. */
+static int asm_table(FILE *f, int m, int k, int print) {
+    const char *kn = ASM_VERSIONS[k].kernel;
     char id[64], t[2][32];
     int fl, rows = 0;
     if (print) {
-        fprintf(f, "| Flags | `" C_OHLC_NAME "` process (OHLC in C) | `" ASM_OHLC_NAME "` process (OHLC in assembly) "
-                   "| Assembly speedup | Same answer |\n");
+        fprintf(f, "| Flags | `" ASM_BASE_NAME "` process (%s in C) | `%s` process (%s in assembly) "
+                   "| Assembly speedup | Same answer |\n", kn, ASM_VERSIONS[k].name, kn);
         fprintf(f, "|---|---:|---:|---:|:---:|\n");
     }
     for (fl = 0; fl < N_FLAGS; fl++) {
         const Result *c, *a;
-        snprintf(id, sizeof id, C_OHLC_NAME "_%s", FLAGS[fl].tag);
+        snprintf(id, sizeof id, ASM_BASE_NAME "_%s", FLAGS[fl].tag);
         c = find_id(c_rows[m], nc[m], id);
-        snprintf(id, sizeof id, ASM_OHLC_NAME "_%s", FLAGS[fl].tag);
+        snprintf(id, sizeof id, "%s_%s", ASM_VERSIONS[k].name, FLAGS[fl].tag);
         a = find_id(c_rows[m], nc[m], id);
         if (c == NULL || a == NULL || a->st_proc.median <= 0) continue;
         rows++;
         if (!print) continue;
         fmt_ms(c->st_proc.median, t[0], 32);
         fmt_ms(a->st_proc.median, t[1], 32);
-        fprintf(f, "| `%s` | %s | %s | **%.2fx** | %s |\n", FLAGS[fl].cflags, t[0], t[1],
+        fprintf(f, "| `%s` | %s | %s | **%.3fx** | %s |\n", FLAGS[fl].cflags, t[0], t[1],
                 c->st_proc.median / a->st_proc.median,
                 strcmp(c->vwap, a->vwap) == 0 && c->buys == a->buys && c->sells == a->sells ? "yes" : "NO");
     }
-    if (print) fprintf(f, "\nProcess time is compared because the OHLC is only used in the engine loop.\n\n");
+    if (print) fprintf(f, "\nProcess time is compared because the %s is only used in the engine loop. "
+                          "Above 1.00x the assembly is faster than the compiler's code, below 1.00x it is slower. "
+                          "The assembly is the same at every flag set; only the C code around it changes.\n\n", kn);
     return rows;
 }
 
@@ -241,7 +245,7 @@ static void python_table(FILE *f, int m) {
 /* one bullet list of the headline numbers */
 static void key_results(FILE *f) {
     const Result *best[N_MACHINES], *base[N_MACHINES], *py[N_MACHINES];
-    int m;
+    int m, k;
     for (m = 0; m < N_MACHINES; m++) {
         best[m] = fastest(c_rows[m], nc[m]);
         base[m] = find_id(c_rows[m], nc[m], BASE_ID);
@@ -250,8 +254,7 @@ static void key_results(FILE *f) {
     for (m = 0; m < N_MACHINES; m++) {
         const Result *s = find_id(c_rows[m], nc[m], STATIC_NAME "_O2");
         const Result *ml = find_id(c_rows[m], nc[m], MALLOC_NAME "_O2");
-        const Result *oc = find_id(c_rows[m], nc[m], C_OHLC_NAME "_O2");
-        const Result *oa = find_id(c_rows[m], nc[m], ASM_OHLC_NAME "_O2");
+        const Result *oc = find_id(c_rows[m], nc[m], ASM_BASE_NAME "_O2");
         if (best[m] == NULL) continue;
         fprintf(f, "- **%s - fastest version:** `%s`, %.1f ms", NAME[m], best[m]->label, best[m]->st.median);
         if (base[m]) fprintf(f, " = **%.2fx** faster than Version 0 (`" BASE_LABEL "`, %.1f ms)",
@@ -273,10 +276,18 @@ static void key_results(FILE *f) {
                        "(%+.1f%%; load %.1f vs %.1f ms, process %.1f vs %.1f ms).\n",
                     NAME[m], ml->st.median, s->st.median, 100 * (ml->st.median - s->st.median) / s->st.median,
                     ml->st_load.median, s->st_load.median, ml->st_proc.median, s->st_proc.median);
-        if (oc && oa && oa->st_proc.median > 0)
-            fprintf(f, "- **%s - assembly OHLC vs C OHLC (-O2):** `" ASM_OHLC_NAME "` processes in %.1f ms vs "
-                       "`" C_OHLC_NAME "` %.1f ms (%.2fx).\n",
-                    NAME[m], oa->st_proc.median, oc->st_proc.median, oc->st_proc.median / oa->st_proc.median);
+        for (k = 0; k < N_ASM; k++) {
+            char id[64];
+            const Result *oa;
+            snprintf(id, sizeof id, "%s_O2", ASM_VERSIONS[k].name);
+            oa = find_id(c_rows[m], nc[m], id);
+            if (oc && oa && oa->st_proc.median > 0)
+                fprintf(f, "- **%s - assembly %s vs C %s (-O2):** `%s` processes in %.1f ms vs "
+                           "`" ASM_BASE_NAME "` %.1f ms (%.3fx, the assembly is %s).\n",
+                        NAME[m], ASM_VERSIONS[k].kernel, ASM_VERSIONS[k].kernel, ASM_VERSIONS[k].name,
+                        oa->st_proc.median, oc->st_proc.median, oc->st_proc.median / oa->st_proc.median,
+                        oa->st_proc.median <= oc->st_proc.median ? "faster" : "slower");
+        }
     }
     if (best[0] && best[1])
         fprintf(f, "- **Laptop vs Pi:** the fastest laptop version is %.2fx faster than the fastest Pi version.\n",
@@ -286,7 +297,7 @@ static void key_results(FILE *f) {
 
 void run_final_report(void) {
     char path[PATH_LEN], rel[PATH_LEN];
-    int m, i, j;
+    int m, i, j, k;
     FILE *f;
 
     /* STEP 1 - read both machines' device specs and results */
@@ -350,10 +361,14 @@ void run_final_report(void) {
         memory_perf_table(f, m);
         snprintf(rel, sizeof rel, "%s/ladder/charts/ladder_memory.png", TAG[m]);
         chart(f, rel, "Peak memory");
-        if (asm_table(f, m, 0) > 0) {
-            fprintf(f, "### Hand-written assembly OHLC (V8) vs the C OHLC (V7)\n\n");
-            asm_table(f, m, 1);
+        for (k = 0; k < N_ASM; k++) {
+            if (asm_table(f, m, k, 0) == 0) continue;
+            fprintf(f, "### Hand-written assembly %s (`%s`) vs the C %s (" ASM_BASE_V ")\n\n",
+                    ASM_VERSIONS[k].kernel, ASM_VERSIONS[k].name, ASM_VERSIONS[k].kernel);
+            asm_table(f, m, k, 1);
         }
+        snprintf(rel, sizeof rel, "%s/ladder/charts/asm_vs_c_process.png", TAG[m]);
+        chart(f, rel, "C vs assembly: process time");
     }
 
     /* STEP 5 - Python, then laptop vs Pi */

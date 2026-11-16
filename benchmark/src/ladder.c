@@ -1,6 +1,6 @@
 /*
  * ladder.c - the C efficiency ladder: every version that "make ladder" builds
- * (V0-V7, + V8 on the Raspberry Pi) at every flag set
+ * (V0-V7, + the two V8 assembly versions on the Raspberry Pi) at every flag set
  */
 #include "bench.h"
 #include <string.h>
@@ -19,6 +19,21 @@ int n_results = 0;
 /* 1 if this machine can build the program (V8 is AArch64 assembly: Pi only) */
 static int can_build(int prog) {
     return !PROGRAMS[prog].pi_only || IS_PI;
+}
+
+/* 1 if the program is V5 or one of the V8s: all that the "asm" mode measures */
+static int in_asm_set(int prog) {
+    int k;
+    if (strcmp(PROGRAMS[prog].name, ASM_BASE_NAME) == 0) return 1;
+    for (k = 0; k < N_ASM; k++)
+        if (strcmp(PROGRAMS[prog].name, ASM_VERSIONS[k].name) == 0) return 1;
+    return 0;
+}
+
+static int prog_named(const char *name) {
+    int p;
+    for (p = 0; p < N_PROGRAMS; p++) if (strcmp(PROGRAMS[p].name, name) == 0) return p;
+    return -1;
 }
 
 static Result *find_version(int prog, int flag) {
@@ -58,7 +73,7 @@ static void ladder_charts(const char *dir, const Result *base, int runs) {
     Bar bars[MAX_VERSIONS];
     char title[256], rows[MAX_VERSIONS][96], cols[8][48];
     double vals[MAX_VERSIONS * 8];
-    int i, p, f, n = 0, nc = 0, colflag[8];
+    int i, p, f, k, n = 0, nc = 0, colflag[8];
 
     /* 1) the efficiency ladder: speedup vs Version 0, without Version 0 itself */
     for (i = 0; base != NULL && i < n_results; i++) {
@@ -79,7 +94,7 @@ static void ladder_charts(const char *dir, const Result *base, int runs) {
         if (!FLAGS[f].pi_only || IS_PI) { colflag[nc] = f; snprintf(cols[nc++], 48, "%s", FLAGS[f].cflags); }
     n = 0;
     for (p = 0; p < N_PROGRAMS; p++) {
-        if (!can_build(p)) continue;
+        if (!can_build(p) || find_version(p, colflag[0]) == NULL) continue;   /* not in this run */
         snprintf(rows[n], 96, "%s", PROGRAMS[p].name);
         for (f = 0; f < nc; f++) {
             const Result *r = find_version(p, colflag[f]);
@@ -120,15 +135,40 @@ static void ladder_charts(const char *dir, const Result *base, int runs) {
     }
     snprintf(title, sizeof title, "Peak memory of each version (%s), lower is better", MACHINE);
     chart_bars(dir, "ladder_memory", title, "peak memory (MB, log scale)", bars, n, 1, 0);
+
+    /* 5) C vs assembly (Pi): process time of V5 and of each V8, one group per flag set.
+     * A V8 bar taller than the V5 bar next to it = that assembly kernel is slower than C. */
+    snprintf(cols[0], 48, ASM_BASE_V ": all C");
+    for (k = 0; k < N_ASM; k++) snprintf(cols[k + 1], 48, "V8: %s in assembly", ASM_VERSIONS[k].kernel);
+    n = 0;
+    for (f = 0; f < N_FLAGS; f++) {
+        int any = 0;
+        for (k = 0; k <= N_ASM; k++) {
+            const Result *r;
+            p = prog_named(k == 0 ? ASM_BASE_NAME : ASM_VERSIONS[k - 1].name);
+            r = p >= 0 ? find_version(p, f) : NULL;
+            vals[n * (N_ASM + 1) + k] = (r && r->ok && r->split) ? r->st_proc.median : 0;
+            if (k > 0 && vals[n * (N_ASM + 1) + k] > 0) any = 1;
+        }
+        if (!any) continue;                     /* no V8 at this flag set (not the Pi) */
+        snprintf(rows[n++], 96, "%s", FLAGS[f].cflags);
+    }
+    snprintf(title, sizeof title, "C vs hand-written assembly: process time (%s, medians of %d runs), lower is better",
+             MACHINE, runs);
+    chart_groups(dir, "asm_vs_c_process", title, "", "median process time (ms)",
+                 rows, n, cols, N_ASM + 1, vals, 0, 0, 0);
 }
 
-void run_ladder(int runs) {
+/* asm_only: only V5 and the V8s are timed, and everything is written to
+ * <machine>/asm/ so the full ladder's results are left alone */
+void run_ladder(int runs, int asm_only) {
     char dir[PATH_LEN], raw[PATH_LEN], path[PATH_LEN];
     const Result *base;
     int p, f, i;
 
     /* STEP 1 - list the versions: every program x every flag set */
     for (p = 0; p < N_PROGRAMS; p++) {
+        if (asm_only && !in_asm_set(p)) continue;
         if (!can_build(p)) {
             printf("(no %s: it links AArch64 assembly, it runs on the Raspberry Pi)\n", PROGRAMS[p].name);
             continue;
@@ -138,7 +178,7 @@ void run_ladder(int runs) {
     }
 
     /* STEP 2 - folders: results/<member>/<machine>/ladder/logs/raw and bin/bench/<machine> */
-    snprintf(dir, sizeof dir, "%s/%s/ladder", ROOT, MACHINE);
+    snprintf(dir, sizeof dir, "%s/%s/%s", ROOT, MACHINE, asm_only ? "asm" : "ladder");
     snprintf(raw, sizeof raw, "%s/logs/raw", dir);
     mkdir_p(raw);
     snprintf(path, sizeof path, "bin/bench/%s", MACHINE);
@@ -163,9 +203,9 @@ void run_ladder(int runs) {
     printf("\nCharts:\n");
     snprintf(path, sizeof path, "%s/charts", dir);
     ladder_charts(path, base, runs);
-    snprintf(path, sizeof path, "%s/%s/c_results.csv", ROOT, MACHINE);
+    snprintf(path, sizeof path, "%s/%s/%sc_results.csv", ROOT, MACHINE, asm_only ? "asm/" : "");
     write_csv(path, 0);
-    snprintf(path, sizeof path, "%s/%s/summary.txt", ROOT, MACHINE);
+    snprintf(path, sizeof path, "%s/%s/%ssummary.txt", ROOT, MACHINE, asm_only ? "asm/" : "");
     write_summary(path, runs);
     printf("\nsummary: %s\n", path);
 }

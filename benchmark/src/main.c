@@ -1,7 +1,7 @@
 /*
  * main.c - efficiency ladder benchmark (Group 06)
  *
- * Builds every version of the src/ ladder (V0-V7, + V8 on the Pi: the same
+ * Builds every version of the src/ ladder (V0-V7, + the two V8s on the Pi: the same
  * programs "make ladder" builds), times each on stress_full.csv with
  * now_ns() (helper_function/timing.h), and writes logs, tables and charts.
  * The ladder programs are NOT changed. See benchmark/README.md.
@@ -15,6 +15,8 @@
  * Run (from the project root), always with your name (one set of results per member):
  *   ./benchmark/ladder_bench -m NAME            C ladder, Python, then REPORT.md
  *   ./benchmark/ladder_bench -m NAME c          C ladder only (+ V8 on the Pi)
+ *   ./benchmark/ladder_bench -m NAME asm        (Pi) only V5 and the two V8s: C vs assembly OHLC,
+ *                                               C vs assembly SMA -> results/NAME/rpi/asm/
  *   ./benchmark/ladder_bench -m NAME python     Python only (after "c": it compares to V0)
  *   ./benchmark/ladder_bench -m NAME report     laptop vs Pi charts + REPORT.md from the saved
  *                                               results of both machines (no timing)
@@ -43,7 +45,7 @@ char PYTHON[128];
 int  HAVE_PERF = 0;
 
 static int usage(const char *prog) {
-    printf("usage: %s -m NAME [all | c | python | report] [-n RUNS] [-p PYTHON]\n"
+    printf("usage: %s -m NAME [all | c | asm | python | report] [-n RUNS] [-p PYTHON]\n"
            "  -m NAME  your name, e.g. -m andrew: results go to benchmark/results/andrew/\n"
            "           (use the SAME name on the laptop and on the Pi)\n", prog);
     return 1;
@@ -65,7 +67,7 @@ int main(int argc, char **argv) {
         if (strcmp(argv[i], "-n") == 0 && i + 1 < argc)      runs = atoi(argv[++i]);
         else if (strcmp(argv[i], "-p") == 0 && i + 1 < argc) snprintf(PYTHON, sizeof PYTHON, "%s", argv[++i]);
         else if (strcmp(argv[i], "-m") == 0 && i + 1 < argc) snprintf(MEMBER, sizeof MEMBER, "%s", argv[++i]);
-        else if (!strcmp(argv[i], "all") || !strcmp(argv[i], "c") ||
+        else if (!strcmp(argv[i], "all") || !strcmp(argv[i], "c") || !strcmp(argv[i], "asm") ||
                  !strcmp(argv[i], "python") || !strcmp(argv[i], "report")) mode = argv[i];
         else return usage(argv[0]);
     }
@@ -120,7 +122,11 @@ int main(int argc, char **argv) {
     if (strcmp(mode, "report") != 0) save_device_info();
 
     /* STEP 5 - the parts */
-    if (!strcmp(mode, "all") || !strcmp(mode, "c"))      run_ladder(runs);
+    if (!strcmp(mode, "all") || !strcmp(mode, "c"))      run_ladder(runs, 0);
+    if (!strcmp(mode, "asm")) {
+        if (!IS_PI) { printf("asm: the assembly versions are AArch64, run this on the Raspberry Pi\n"); return 1; }
+        run_ladder(runs, 1);
+    }
     if (!strcmp(mode, "all") || !strcmp(mode, "python")) run_python();
     if (!strcmp(mode, "all") || !strcmp(mode, "report")) {
         run_compare();                         /* laptop vs Pi charts */

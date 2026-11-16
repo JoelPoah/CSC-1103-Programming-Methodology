@@ -1,9 +1,9 @@
 // v8_ohlc_fx.s - AArch64 (64-bit ARM) version of engine_fx/v5-v7_ohlc_fx.c (Yong Sheng, V8)
 //
 // Copied unchanged from assembly/ohlc_fx.s, apart from this header.
-// V8 = V7 with this file linked instead of v5-v7_ohlc_fx.c, so any speed
-// difference comes from the assembly alone. assembly/sma_fx.s is NOT used:
-// on the Pi it ran slower than the C sma_fx.c (assembly/out_compare_all.txt).
+// V8 = V5 with this file linked instead of v5-v7_ohlc_fx.c, so any speed
+// difference comes from the assembly alone. The assembly SMA is NOT linked here:
+// it is measured on its own in v8_stageB_asm_sma (v8_sma_fx.s).
 // AArch64 Linux only (the Raspberry Pi): "make ladder" builds V8 there.
 //
 //

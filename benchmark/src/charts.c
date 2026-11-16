@@ -36,6 +36,16 @@ static void draw(const char *script, const char *dir, const char *name, const ch
     printf("  chart: %s\n", png);
 }
 
+/* Room for the x labels, so a chart with many bars (the Pi: 50 versions) stays
+ * readable: with many bars the labels stand upright (90 degrees) instead of
+ * leaning, and the bottom margin grows with the longest label.
+ * Returns the bottom margin in text lines; *xrot = the label angle. */
+static int label_room(int longest, int upright, int lean, int least, int *xrot) {
+    int bm = (int)((upright ? 0.5 : 0.27) * longest) + 3;
+    *xrot = upright ? 90 : lean;
+    return bm < least ? least : bm;
+}
+
 /* lo/hi of the positive values, for the y axis */
 static int value_range(const double *v, int n, double *lo, double *hi) {
     int i;
@@ -53,15 +63,21 @@ void chart_bars(const char *dir, const char *name, const char *title, const char
     char dat[PATH_LEN], vars[1024];
     double v[MAX_VERSIONS], lo, hi;
     FILE *f;
-    int i;
+    int i, longest = 0, dense = n > 16, xrot, bm, w;
 
-    for (i = 0; i < n; i++) v[i] = bars[i].value;
+    for (i = 0; i < n; i++) {
+        v[i] = bars[i].value;
+        if ((int)strlen(bars[i].label) > longest) longest = (int)strlen(bars[i].label);
+    }
     if (n == 0 || !value_range(v, n, &lo, &hi) || (f = open_data(dir, name, dat)) == NULL) return;
     for (i = 0; i < n; i++)    /* index "label" value colour "text on the bar" */
         fprintf(f, "%d \"%s\" %.6f %u \"%s\"\n", i, bars[i].label, bars[i].value, bars[i].colour, bars[i].text);
     fclose(f);
-    snprintf(vars, sizeof vars, "ttl='%s'; sub=''; ylab='%s'; w=%d; h=800; logy=%d; ylo=%g; yhi=%g; ref=%g; n=%d",
-             title, ylabel, n > 10 ? 1700 : 1200, logy, lo, hi, ref, n);
+    /* dense (many bars): 34 pixels per bar, upright x labels and upright values */
+    bm = label_room(longest, dense, 30, 9, &xrot);
+    w = dense ? 200 + n * 34 : n > 10 ? 1700 : 1200;
+    snprintf(vars, sizeof vars, "ttl='%s'; sub=''; ylab='%s'; w=%d; h=%d; logy=%d; ylo=%g; yhi=%g; ref=%g; n=%d; "
+             "xrot=%d; bm=%d; dense=%d", title, ylabel, w, 650 + bm * 15, logy, lo, hi, ref, n, xrot, bm, dense);
     draw("bars", dir, name, dat, vars);
 }
 
@@ -74,7 +90,7 @@ void chart_groups(const char *dir, const char *name, const char *title, const ch
     char dat[PATH_LEN], vars[1024], colour_list[64] = "";
     double lo, hi;
     FILE *f;
-    int r, c, shown = 0, keep[8];
+    int r, c, shown = 0, keep[8], longest = 0, slots, dense, xrot, bm, w;
 
     if (nrows == 0 || !value_range(vals, nrows * ncols, &lo, &hi) || (f = open_data(dir, name, dat)) == NULL)
         return;
@@ -100,8 +116,16 @@ void chart_groups(const char *dir, const char *name, const char *title, const ch
         fprintf(f, "\n");
     }
     fclose(f);
-    snprintf(vars, sizeof vars, "ttl='%s'; sub='%s'; ylab='%s'; w=%d; h=820; logy=%d; ylo=%g; yhi=%g; ref=%g; "
-             "ncols=%d; fmt=%d; cidx='%s'", title, sub, ylabel, nrows * (shown + 1) > 18 ? 1700 : 1300, logy,
-             lo, hi, ref, shown, speed_fmt, colour_list);
+    /* slots = bars + one gap per group. dense (many slots): 20 pixels per slot and
+     * upright values; many groups: upright x labels too */
+    for (r = 0; r < nrows; r++) if ((int)strlen(rows[r]) > longest) longest = (int)strlen(rows[r]);
+    slots = nrows * (shown + 1);
+    dense = slots > 30;
+    bm = label_room(longest, nrows > 12, 20, 7, &xrot);
+    w = slots > 18 ? 1700 : 1300;
+    if (dense && 220 + slots * 20 > w) w = 220 + slots * 20;
+    snprintf(vars, sizeof vars, "ttl='%s'; sub='%s'; ylab='%s'; w=%d; h=%d; logy=%d; ylo=%g; yhi=%g; ref=%g; "
+             "ncols=%d; fmt=%d; cidx='%s'; xrot=%d; bm=%d; dense=%d", title, sub, ylabel, w, 700 + bm * 15, logy,
+             lo, hi, ref, shown, speed_fmt, colour_list, xrot, bm, dense);
     draw("groups", dir, name, dat, vars);
 }

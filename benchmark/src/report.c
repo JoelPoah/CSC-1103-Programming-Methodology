@@ -106,13 +106,15 @@ void write_version_log(const Result *r, const char *dir, double base_ms) {
                 base_ms < r->st.median ? "  -> slower than Version 0" : "");
     else
         fprintf(f, "  n/a (" BASE_LABEL " has not been measured on this machine)\n");
-    /* V8 is V7 with the OHLC in assembly: compare it with V7 at the same flag set */
-    if (!python && strcmp(PROGRAMS[r->prog].name, ASM_OHLC_NAME) == 0) {
-        const Result *c = version_of(C_OHLC_NAME, r->flag);
+    /* a V8 is V5 with one kernel in assembly: compare it with V5 at the same flag set */
+    for (i = 0; !python && i < N_ASM; i++) {
+        const Result *c = version_of(ASM_BASE_NAME, r->flag);
+        if (strcmp(PROGRAMS[r->prog].name, ASM_VERSIONS[i].name) != 0) continue;
         if (c != NULL)
-            fprintf(f, "\nvs %s (OHLC in C)\n  Process: %.3fx (%.1f -> %.1f ms)  <- what the assembly changes\n"
+            fprintf(f, "\nvs %s (%s in C)\n  Process: %.3fx (%.1f -> %.1f ms)  <- what the assembly changes\n"
                        "  Load + Process: %.3fx\n  Same answer as plain C: %s\n",
-                    c->label, c->st_proc.median / r->st_proc.median, c->st_proc.median, r->st_proc.median,
+                    c->label, ASM_VERSIONS[i].kernel,
+                    c->st_proc.median / r->st_proc.median, c->st_proc.median, r->st_proc.median,
                     c->st.median / r->st.median,
                     strcmp(c->vwap, r->vwap) == 0 && c->buys == r->buys && c->sells == r->sells ? "yes" : "NO - check it");
     }
@@ -130,7 +132,7 @@ static const char *ipc_text(const Result *r) {
 void write_summary(const char *path, int runs) {
     const Result *best = NULL, *base = NULL;
     char t[5][32];
-    int i, f2;
+    int i, f2, k;
     FILE *f = fopen(path, "w");
     if (f == NULL) return;
 
@@ -164,9 +166,11 @@ void write_summary(const char *path, int runs) {
     fprintf(f, "\nmode: 'yes' = two or more runs equal at 1 ms (value in the version's log), 'none' = all differ.\n"
                "signals: BUY/SELL on %s. Version 0 (double, naive SMA) gives 20386/20176 on stress_full;\n"
                "running-sum and fixed-point versions differ slightly by design (rounding).\n", DATA_KEY);
-    if (best != NULL)
+    if (best != NULL && base != NULL)
         fprintf(f, "\nFASTEST: %s, median %.1f ms = %.2fx faster than Version 0\n", best->label,
-                best->st.median, base ? base->st.median / best->st.median : 0);
+                best->st.median, base->st.median / best->st.median);
+    else if (best != NULL)                  /* "asm" mode: Version 0 is not in this run */
+        fprintf(f, "\nFASTEST: %s, median %.1f ms\n", best->label, best->st.median);
 
     /* V6 vs V5: the same engine and parser, only the array differs */
     fprintf(f, "\nMALLOC vs STATIC ARRAY (" MALLOC_NAME " vs " STATIC_NAME ", identical except the array)\n");
@@ -177,14 +181,18 @@ void write_summary(const char *path, int runs) {
                     FLAGS[f2].cflags, st->st_load.median, st->st_proc.median, ml->st_load.median,
                     ml->st_proc.median, 100 * (ml->st.median - st->st.median) / st->st.median);
     }
-    /* V8 vs V7 (Pi): the same program, only the OHLC is hand-written assembly */
-    if (IS_PI) {
-        fprintf(f, "\nASSEMBLY OHLC vs C OHLC (" ASM_OHLC_NAME " vs " C_OHLC_NAME ", identical except the OHLC)\n");
+    /* each V8 vs V5 (Pi): the same program, only ONE kernel is hand-written assembly.
+     * Above 1.000x the assembly is faster than the compiler's code, below it is slower. */
+    for (k = 0; IS_PI && k < N_ASM; k++) {
+        const char *kn = ASM_VERSIONS[k].kernel;
+        fprintf(f, "\nASSEMBLY %s vs C %s (%s vs " ASM_BASE_NAME ", identical except the %s)\n",
+                kn, kn, ASM_VERSIONS[k].name, kn);
         for (f2 = 0; f2 < N_FLAGS; f2++) {
-            const Result *c = version_of(C_OHLC_NAME, f2), *a = version_of(ASM_OHLC_NAME, f2);
+            const Result *c = version_of(ASM_BASE_NAME, f2), *a = version_of(ASM_VERSIONS[k].name, f2);
             if (c && a)
-                fprintf(f, "  %-21s C: process %6.1f ms | assembly: process %6.1f ms | assembly %.3fx | same answer: %s\n",
+                fprintf(f, "  %-21s C: process %6.1f ms | assembly: process %6.1f ms | assembly %.3fx (%s) | same answer: %s\n",
                         FLAGS[f2].cflags, c->st_proc.median, a->st_proc.median, c->st_proc.median / a->st_proc.median,
+                        a->st_proc.median <= c->st_proc.median ? "faster" : "SLOWER",
                         strcmp(c->vwap, a->vwap) == 0 && c->buys == a->buys && c->sells == a->sells ? "yes" : "NO - check it");
         }
     }

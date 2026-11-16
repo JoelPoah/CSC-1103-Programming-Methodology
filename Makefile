@@ -6,9 +6,12 @@
 #   make plotA      build stageA_plot and run it (writes stageA/signals.dat + signals.png)
 #   make stageC     build stageC only (stageC_malloc, stageC_replay/_rival + _malloc, + _asm on the Pi)
 #   make asm        write the -O2 assembly of the fixed-point kernels to stageC/asm/
-#   make ladder     build every version V0-V7 from src/ into bin/ (+ V8 on the Pi)
+#   make ladder     build every version V0-V7 from src/ into bin/ (+ the two V8s on the Pi)
+#   make ladder_asm build only the two assembly versions (Raspberry Pi only):
+#                   v8_stageB_asm_ohlc = V5 + ohlc_fx.s, v8_stageB_asm_sma = V5 + sma_fx.s
 #   make benchmark  build the ladder benchmark tool (benchmark/src/ -> benchmark/ladder_bench);
 #                   it times V0-V8 below at -O0..-O3, see benchmark/README.md
+#   make benchmark_asm  (Pi) build the tool and time only V5 and the two V8s: C vs assembly
 #   make clean      delete all built executables
 #
 # Works with GNU make on Windows (MinGW gcc adds .exe automatically), Linux and macOS.
@@ -70,7 +73,8 @@ HELPERS = helper_function/timing.h helper_function/led.h
 # same source files; only the files linked for "mem" change:
 #   _malloc  trades_fx_malloc.c (fgets, file read twice)   = ladder V6
 #   (none)   trades_fx_fread.c  (one fread)                = ladder V7
-#   _asm     V7 + ohlc_fx.s instead of ohlc_fx.c           = ladder V8, Raspberry Pi only
+#   _asm     V7 + ohlc_fx.s instead of ohlc_fx.c           Raspberry Pi only (the ladder's V8
+#            links the same assembly, but on V5's loader)
 STAGEC_MALLOC       = stageC/stageC_malloc$(EXE)
 STAGEC_REPLAY       = stageC/stageC_replay$(EXE)
 STAGEC_RIVAL        = stageC/stageC_rival$(EXE)
@@ -113,7 +117,11 @@ endif
 # V5  main_stageB_fixed  fixed-point prices, fixed-size global array
 # V6  main_stageB_fixed  fixed-point prices, malloc'd array (Stage C)
 # V7  main_stageB_fixed  same array, whole file read with one fread (Lucas's feed)
-# V8  main_stageB_fixed  V7 + hand-written AArch64 OHLC (Yong Sheng), Raspberry Pi only
+# V8  main_stageB_fixed  V5 + ONE hand-written AArch64 kernel (Yong Sheng), Raspberry Pi only.
+#     Built on V5 (not V7): V5 is the fastest version on the Pi, its loader beats the fread one there.
+#     Two builds, so each kernel is measured against V5 on its own:
+#       v8_stageB_asm_ohlc  V5 with v8_ohlc_fx.s in place of v5-v7_ohlc_fx.c
+#       v8_stageB_asm_sma   V5 with v8_sma_fx.s  in place of sma_fx.c
 LADDER_V0 = bin/v0_stageA_naive_sma$(EXE)
 LADDER_V1 = bin/v1_stageAplus_own_reader$(EXE)
 LADDER_V2 = bin/v2_stageAplus_fast_parser$(EXE)
@@ -122,23 +130,30 @@ LADDER_V4 = bin/v4_stageB_running_sma$(EXE)
 LADDER_V5 = bin/v5_stageB_fixed_point$(EXE)
 LADDER_V6 = bin/v6_stageC_malloc$(EXE)
 LADDER_V7 = bin/v7_stageC_fread$(EXE)
-LADDER_V8 = bin/v8_stageC_asm_ohlc$(EXE)
+LADDER_V8 = bin/v8_stageB_asm_ohlc$(EXE)
+LADDER_V8_SMA = bin/v8_stageB_asm_sma$(EXE)
+LADDER_ASM = $(LADDER_V8) $(LADDER_V8_SMA)
 LADDER = $(LADDER_V0) $(LADDER_V1) $(LADDER_V2) $(LADDER_V3) $(LADDER_V4) $(LADDER_V5) $(LADDER_V6) $(LADDER_V7)
 
 CFLAGS_L   = -O2 -Wall
 SRC_H      = $(wildcard src/*.h src/*/*.h) $(HELPERS)
 SRC_ENGINE = src/engine/vwap.c src/engine/ohlc.c src/engine/signal.c src/engine/report.c
-SRC_FX_CORE = src/engine_fx/vwap_fx.c src/engine_fx/sma_fx.c src/engine_fx/signal_fx.c src/engine/report.c
+# SRC_FX_BASE = the fixed-point modules every V5-V8 build links;
+# the SMA and the OHLC are added per version, in C or in assembly
+SRC_FX_BASE = src/engine_fx/vwap_fx.c src/engine_fx/signal_fx.c src/engine/report.c
+SRC_FX_CORE = $(SRC_FX_BASE) src/engine_fx/sma_fx.c
 SRC_FX     = $(SRC_FX_CORE) src/engine_fx/v5-v7_ohlc_fx.c
+# the files V5 and both V8s share: main, the fixed-size global array, the fixed-point parser
+SRC_V58    = src/v5-v8_main_stageB_fixed.c src/store/v5_trades_fx_array.c src/reader/v5-v8_read_trade_fx.c
 
 # V8 is AArch64 assembly, so it is only part of the ladder on the Pi (uname -m = aarch64)
 ifeq ($(ASM_TAG),aarch64)
-LADDER += $(LADDER_V8)
+LADDER += $(LADDER_ASM)
 endif
 
 ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER) $(BENCHMARK)
 
-.PHONY: all stage0 stageA plotA stageC asm ladder benchmark clean
+.PHONY: all stage0 stageA plotA stageC asm ladder ladder_asm benchmark benchmark_asm clean
 
 all: stage0 stageA stageC ladder
 
@@ -189,7 +204,7 @@ $(STAGEC_REPLAY_MALLOC): stageC/stageC_replay.c $(ENGINE_C_MALLOC) $(ENGINE_C_H)
 $(STAGEC_RIVAL_MALLOC): stageC/stageC_rival.c $(ENGINE_C_MALLOC) $(ENGINE_C_H)
 	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C_MALLOC) -lm -o $@
 
-# _asm variant: V7 with the hand-written AArch64 ohlc_fx.s (= ladder V8, Pi only)
+# _asm variant: V7 with the hand-written AArch64 ohlc_fx.s (Pi only)
 $(STAGEC_REPLAY_ASM): stageC/stageC_replay.c $(ENGINE_C_ASM) $(ENGINE_C_H)
 	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C_ASM) -o $@
 
@@ -226,8 +241,27 @@ $(LADDER_V6): src/v5-v8_main_stageB_fixed.c src/store/v6_trades_fx_malloc.c src/
 $(LADDER_V7): src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) $(SRC_H)
 	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) -o $@
 
-$(LADDER_V8): src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c src/engine_asm/v8_ohlc_fx.s $(SRC_FX_CORE) $(SRC_H)
-	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX_CORE) src/engine_asm/v8_ohlc_fx.s -o $@
+# V8, OHLC only: V5 with the assembly OHLC, the SMA stays in C
+$(LADDER_V8): $(SRC_V58) $(SRC_FX_CORE) src/engine_asm/v8_ohlc_fx.s $(SRC_H)
+	$(CC) $(CFLAGS_L) $(SRC_V58) $(SRC_FX_CORE) src/engine_asm/v8_ohlc_fx.s -o $@
+
+# V8, SMA only: V5 with the assembly SMA, the OHLC stays in C
+$(LADDER_V8_SMA): $(SRC_V58) $(SRC_FX_BASE) src/engine_fx/v5-v7_ohlc_fx.c src/engine_asm/v8_sma_fx.s $(SRC_H)
+	$(CC) $(CFLAGS_L) $(SRC_V58) $(SRC_FX_BASE) src/engine_fx/v5-v7_ohlc_fx.c src/engine_asm/v8_sma_fx.s -o $@
+
+# the two assembly versions on their own; the .s files only assemble on the Pi
+ifeq ($(ASM_TAG),aarch64)
+ladder_asm: $(LADDER_ASM)
+
+# time V5 and the two V8s only, to compare each assembly kernel with the C one
+#   make benchmark_asm MEMBER=yourname
+MEMBER = member
+benchmark_asm: $(BENCHMARK)
+	./$(BENCHMARK) -m $(MEMBER) asm
+else
+ladder_asm benchmark_asm:
+	@echo $@: the assembly versions are AArch64, run this on the Raspberry Pi
+endif
 
 benchmark: $(BENCHMARK)
 
