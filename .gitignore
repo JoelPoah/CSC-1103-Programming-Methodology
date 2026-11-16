@@ -62,3 +62,7 @@ bin/*
 # test output stay local, plus the built tool (Linux/Pi name; .exe is covered above)
 benchmark/results/
 benchmark/ladder_bench
+
+# perf raw recordings (keep the text reports instead)
+perf.data*
+*_perf.data
