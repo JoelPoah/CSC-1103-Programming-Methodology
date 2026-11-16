@@ -1,0 +1,17 @@
+# Commands (run on the laptop in Git Bash from the project root, gcc 15.2.0 MSYS2 UCRT64):
+# gcc -O2 -Wall logs/JoelStageA/joel_laptop/peakws.c -o logs/JoelStageA/joel_laptop/peakws.exe -lpsapi
+# B=bin/bench/laptop/v0_stageA_naive_sma_O2.exe     # the -O2 build ladder_bench timed
+# { echo "peak working set, native Windows (GetProcessMemoryInfo, PeakWorkingSetSize), $B, 3 runs each, kB = 1024 bytes"
+#   for d in test20 dev stress; do
+#     vals=$(for n in 1 2 3; do
+#              ./logs/JoelStageA/joel_laptop/peakws.exe ./$B $d 2>&1 >/dev/null \
+#                | awk '/peakws_kB/{print $2}'
+#            done | sort -n | tr -d '\r' | tr '\n' ' ')
+#     echo "$d  runs_kB: $vals  median_kB: $(echo $vals | awk '{print $2}')"
+#   done; } | tee logs/JoelStageA/joel_laptop/peakws.txt
+# (kB = 1024 bytes, PeakWorkingSetSize from GetProcessMemoryInfo; 3 runs per dataset, median = middle value)
+
+peak working set, native Windows (GetProcessMemoryInfo, PeakWorkingSetSize), bin/bench/laptop/v0_stageA_naive_sma_O2.exe, 3 runs each, kB = 1024 bytes
+test20  runs_kB: 4436 4440 4444   median_kB: 4440
+dev  runs_kB: 4444 4444 4444   median_kB: 4444
+stress  runs_kB: 4440 4440 4440   median_kB: 4440
