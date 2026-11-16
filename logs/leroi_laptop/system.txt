@@ -1,0 +1,10 @@
+date:      2026-11-15 23:12 +08
+git:       4e8a234 (leroi)
+model:     
+kernel:    Linux 7.2.15-arch1-1 x86_64
+page size: 4096 bytes
+valgrind:  valgrind-3.25.1
+
+               total        used        free      shared  buff/cache   available
+Mem:            30Gi       3.4Gi        24Gi        98Mi       3.3Gi        27Gi
+Swap:           35Gi          0B        35Gi

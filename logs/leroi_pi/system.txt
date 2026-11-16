@@ -1,0 +1,10 @@
+date:      2026-11-16 00:10 +08
+git:       4e8a234 (leroi)
+model:     Raspberry Pi 5 Model B Rev 1.1
+kernel:    Linux 6.18.39+rpt-rpi-2712 aarch64
+page size: 16384 bytes
+valgrind:  valgrind-3.24.0
+
+               total        used        free      shared  buff/cache   available
+Mem:           7.9Gi       673Mi       5.2Gi        35Mi       2.2Gi       7.2Gi
+Swap:          2.0Gi          0B       2.0Gi
