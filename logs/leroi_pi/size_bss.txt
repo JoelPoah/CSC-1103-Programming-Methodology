@@ -1,0 +1,5 @@
+   text	   data	    bss	    dec	    hex	filename
+   9312	    728	320002240	320012280	1312fff8	bin/v3_stageB_in_memory
+   9336	    728	320002256	320012320	13130020	bin/v4_stageB_running_sma
+   8693	    712	320000008	320009413	1312f4c5	bin/v5_stageB_fixed_point
+   9141	    728	      8	   9877	   2695	bin/v6_stageC_malloc

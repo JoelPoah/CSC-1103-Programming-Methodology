@@ -1,0 +1,10 @@
+== max RSS, median of 3 (MB = 10^6 bytes)
+  v0_stageA_naive_sma          full run      2.2 MB
+  v1_stageAplus_own_reader     full run      2.2 MB
+  v2_stageAplus_fast_parser    full run      2.2 MB
+  v3_stageB_in_memory          full run    289.0 MB   dev run    35.5 MB
+  v4_stageB_running_sma        full run    287.9 MB   dev run    35.6 MB
+  v5_stageB_fixed_point        full run    289.3 MB   dev run    34.5 MB
+  v6_stageC_malloc             full run    287.7 MB   dev run    34.0 MB
+  v7_stageC_fread              full run    965.4 MB   dev run   109.8 MB
+  (V0-V2 stream stress_full only; V3+ always run test20 + dev_1M first, "dev" stops before stress_full)
