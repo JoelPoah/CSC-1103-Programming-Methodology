@@ -20,8 +20,13 @@
  * Usage (from the project root):
  *   stageC_replay <file.csv> [--engine v0|mem] [--speed X] [--minutes M]
  *                 [--from-min M] [--short S] [--long L] [--rival R_us]
- *                 [--led] [--signals | --quiet]
- *     --speed X       1 = real time, 100, 1000 ... ; 0 = no clock (as fast as possible)
+ *                 [--led] [--signals | --quiet] [--feed N]
+ *     --feed N        machine-readable live output for the GUI (stageC_gui) and
+ *                     the GIF maker (plot_live.py): N "#F" sample lines spread
+ *                     evenly over the replayed market time, one "#S" line per
+ *                     signal, then the normal summary. Turns off the status and
+ *                     signal lines. Printed after the time is taken, like them.
+ *     --speed X      1 = real time, 100, 1000 ... ; 0 = no clock (as fast as possible)
  *     --minutes M     stop after M minutes of MARKET time (0 = the whole file)
  *     --from-min M    start M market minutes after the first trade
  *     --short/--long  SMA windows (default 35 and 60)
@@ -81,6 +86,7 @@ double opt_rival_us = 1.0;       /* rival reaction time, microseconds   */
 int    opt_led = 0;              /* 1 = drive the LED                   */
 int    opt_signals = -1;         /* 1 = print signals, -1 = decide later */
 int    opt_quiet = 0;            /* 1 = summary only                    */
+int    opt_feed = 0;             /* > 0 = live feed with this many samples */
 
 /* colour the LED is showing now (SIG_NONE = off) */
 int led_colour = SIG_NONE;
@@ -89,7 +95,7 @@ int led_colour = SIG_NONE;
 void print_usage(char *program) {
     printf("usage: %s <file.csv> [--engine v0|mem] [--speed X] [--minutes M]\n", program);
     printf("          [--from-min M] [--short S] [--long L] [--rival R_us]\n");
-    printf("          [--led] [--signals | --quiet]\n");
+    printf("          [--led] [--signals | --quiet] [--feed N]\n");
 }
 
 /* read_options
@@ -132,6 +138,8 @@ int read_options(int argc, char *argv[]) {
                 opt_short = atoi(argv[i + 1]);
             } else if (strcmp(argv[i], "--long") == 0) {
                 opt_long = atoi(argv[i + 1]);
+            } else if (strcmp(argv[i], "--feed") == 0) {
+                opt_feed = atoi(argv[i + 1]);
             } else if (strcmp(argv[i], "--rival") == 0) {
                 if (sscanf(argv[i + 1], "%lf", &opt_rival_us) != 1) {
                     printf("bad rival time: %s\n", argv[i + 1]);
@@ -156,9 +164,14 @@ int read_options(int argc, char *argv[]) {
         printf("bad windows: need 1 <= short < long <= %d\n", MAX_WIN);
         return 0;
     }
-    if (opt_speed < 0 || opt_minutes < 0 || opt_from_min < 0) {
-        printf("speed, minutes and from-min must not be negative\n");
+    if (opt_speed < 0 || opt_minutes < 0 || opt_from_min < 0 || opt_feed < 0) {
+        printf("speed, minutes, from-min and feed must not be negative\n");
         return 0;
+    }
+    /* the feed replaces the status and signal lines */
+    if (opt_feed > 0) {
+        opt_quiet = 1;
+        opt_signals = 0;
     }
     /* by default, print each signal only at real speed up to 100x
      * (at higher speeds there are too many to read) */
@@ -218,6 +231,27 @@ void show_status(char *name, long long time_us, long long done, long long total,
            buys, sells);
 }
 
+/* feed_sample
+ * What:    one "#F" line of the live feed (read by stageC_gui and plot_live.py):
+ *          #F done total time_us price_cents pnl_lat pnl_proc lag_ns max_lag_ns
+ *             buys sells won lost avg_proc_ns
+ *          P&L values are in cents (reaction = latency, reaction = processing).
+ * Note:    fflush, so a GUI reading through a pipe (or over ssh) sees it now
+ */
+void feed_sample(long long done, long long total, long long time_us, long long price,
+                 Rival *rival, Rival *rival_proc, long long lag_ns, long long max_lag_ns,
+                 int buys, int sells, double proc_total) {
+    double avg_proc = 0.0;
+
+    if (done > 0) {
+        avg_proc = proc_total / done;
+    }
+    printf("#F %lld %lld %lld %lld %lld %lld %lld %lld %d %d %d %d %.1f\n", done, total,
+           time_us, price, rival->pnl, rival_proc->pnl, lag_ns, max_lag_ns, buys, sells,
+           rival->wins, rival->losses, avg_proc);
+    fflush(stdout);
+}
+
 /* wait_until
  * What:    do nothing until the clock reaches target (in ns)
  * Why:     sleeping can overshoot by several milliseconds, far longer than
@@ -267,6 +301,7 @@ int main(int argc, char *argv[]) {
     long long proc_worst = 0, lat_worst = 0;
     double proc_total = 0.0, lat_total = 0.0;
     long long price;
+    long long feed_step = 0, next_feed = 0;   /* market time between "#F" lines, us */
     int sig, buys = 0, sells = 0;
     double vwap = 0.0;
     char *name;
@@ -333,6 +368,19 @@ int main(int argc, char *argv[]) {
 
     if (opt_led) {
         led_init();
+    }
+
+    /* live feed: "#H engine speed short long rival_us trades ts_first_us span_us",
+     * then a "#F" line every feed_step microseconds of market time */
+    if (opt_feed > 0) {
+        feed_step = (list[last - 1].time - ts_first) / opt_feed;
+        if (feed_step < 1) {
+            feed_step = 1;
+        }
+        next_feed = ts_first;
+        printf("#H %s %d %d %d %g %lld %lld %lld\n", name, opt_speed, opt_short, opt_long,
+               opt_rival_us, last - first, ts_first, list[last - 1].time - ts_first);
+        fflush(stdout);
     }
 
     /* ---- 4) REPLAY ---- */
@@ -402,8 +450,21 @@ int main(int argc, char *argv[]) {
             if (opt_signals) {
                 show_signal(sig, i + 1, list[i].time, price, lat_ns, rival.pnl);
             }
+            if (opt_feed > 0) {
+                /* #S sig time_us price_cents latency_ns */
+                printf("#S %d %lld %lld %lld\n", sig, list[i].time, price, lat_ns);
+            }
         }
         done++;
+
+        /* live feed sample (after the time is taken, like the status line) */
+        if (opt_feed > 0 && (list[i].time >= next_feed || i == last - 1)) {
+            feed_sample(done, last - first, list[i].time, price, &rival, &rival_proc,
+                        lag_ns, max_lag_ns, buys, sells, proc_total);
+            while (next_feed <= list[i].time) {
+                next_feed = next_feed + feed_step;
+            }
+        }
 
         /* e) a status line once a second (printing is not counted as latency) */
         now = now_ns();

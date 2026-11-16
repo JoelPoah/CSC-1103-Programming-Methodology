@@ -3,134 +3,109 @@
 Brief: _"Generate the assembly for your main loop (`gcc -S -O2`) and annotate what each
 instruction does."_
 
-The fastest version (`--engine mem`, same maths as `stageB/stageB_fixed.c`) does this for
-every trade (`step_fx` in `stageC/engine/engine.c`):
+The fastest version (`--engine mem`, ladder V7, same maths as `stageB/stageB_fixed.c`)
+does this for every trade (`fixed_step` in `stageC/engine/fixed_engine.c`):
 
 ```c
-vwap_fx_update(&e->vwap_fx, t->price, t->qty);          /* 2 running sums        */
-ohlc_fx_update(&e->bar_fx, t->time, t->price, ...);     /* 1-second bar          */
-sma_fx_push(&e->sma_short_fx, t->price);                /* running-sum SMA x 2   */
-sma_fx_push(&e->sma_long_fx,  t->price);
-crossover_fx_update(&e->cross_fx, sum_s, S, sum_l, L);  /* exact integer signal  */
+vwap_fx_update(&vwap, t->price, t->qty);                 /* 2 running sums        */
+ohlc_fx_update(&bar, t->time, t->price, &finished);      /* 1-second bar          */
+sma_fx_push(&short_sma, t->price);                       /* running-sum SMA x 2   */
+sma_fx_push(&long_sma,  t->price);
+if (sma_fx_ready(&short_sma) && sma_fx_ready(&long_sma))
+    return crossover_fx_update(&cross, sma_fx_sum(&short_sma), short_window,
+                               sma_fx_sum(&long_sma), long_window);  /* exact signal */
+return SIG_NONE;
 ```
 
-The listings below follow one trade through the code: the dispatch in `engine_step`, the
-sequence in `step_fx`, then the four kernels it calls. Each `.s` file was made with:
+The replay loop in `stageC_replay.c` calls `fixed_step(&list[i])` once per trade, where
+`list` is the malloc'd TradeFx array that `load_trades_fx()` (`trades_fx_fread.c`, one
+`fread`) filled before the replay started. The listings below follow one trade: the
+sequence in `fixed_step`, then the four kernels it calls. Each `.s` file was made with:
 
 ```sh
 make asm            # = gcc -S -O2 -fno-asynchronous-unwind-tables -fno-ident <file>.c
 ```
 
 > **Machine:** these listings are **x86-64** from the laptop (Windows, MinGW gcc 16.1,
-> Windows x64 calling convention). **The Pi listing is still TODO.** On the Pi, run
-> `make asm` again. It writes `*_aarch64_O2.s` (ARM64 instructions: `ldr/str/add/sub/
-> mul/sdiv/cmp/b.le/csel`...). Annotate that file the same way for CSC1104 (see the table at
-> the end).
+> Windows x64 calling convention), regenerated on 15 Nov 2026 from the current
+> `fixed_engine.c`. **The Pi listing is still TODO.** On the Pi, run `make asm` again. It
+> writes `*_aarch64_O2.s` (ARM64 instructions: `ldr/str/add/sub/mul/sdiv/cmp/b.le/csel`...).
+> Annotate that file the same way for CSC1104 (see the table at the end).
 
 Windows x64 calling convention used below: arguments 1–4 arrive in `rcx, rdx, r8, r9`,
-the 5th is on the stack at `40(%rsp)`, and the return value goes in `eax`/`rax`.
-`q` = 64-bit (long long), `l` = 32-bit (int) operand.
+the 5th is on the stack at `32(%rsp)` (above the 32-byte shadow space of the callee), and
+the return value goes in `eax`/`rax`. `q` = 64-bit (long long), `l` = 32-bit (int) operand.
 
 ---
 
-## 0. The loop body: `engine_step` and `step_fx`
+## 0. The loop body: `fixed_step` (`fixed_engine_x86-64_O2.s`)
 
-Each trade starts here. Only the `mem` path of `engine_step` is shown; the `v0` and `fast`
-paths in `engine_x86-64_O2.s` call the parser first.
-
-```c
-case ENGINE_MEM:
-    *price_cents = e->parsed[i].price;
-    return step_fx(e, &e->parsed[i]);
-```
+The engine's state (`vwap`, `bar`, `finished`, `short_sma`, `long_sma`, `cross`,
+`short_window`, `long_window`) are file-level `static` variables in `fixed_engine.c`, so
+gcc addresses them relative to the instruction pointer (`name(%rip)`); there is no
+engine struct pointer to pass around.
 
 `TradeFx` layout: `time` at 0, `price` at 8, `qty` at 16, `is_buy` at 24; 32 bytes in all.
 
 ```asm
-engine_step:                    ; rcx = e, rdx = feed, r8 = i, r9 = price_cents
-    subq    $216, %rsp          ; reserve stack space (used by the v0 / fast paths)
-    movl    (%rcx), %eax        ; eax = e->kind
-    movq    %rbx, 192(%rsp)     ; save rbx (callee-saved)
-    movq    %rcx, %rbx          ; rbx = e (kept for the v0 / fast paths)
-    movq    %rsi, 200(%rsp)     ; save rsi (callee-saved)
-    movq    %r9, %rsi           ; rsi = price_cents (kept for the v0 / fast paths)
-    testl   %eax, %eax          ; kind == ENGINE_V0 (0) ?
-    je      .L23                ;   yes -> Version 0 path
-    cmpl    $1, %eax            ; kind == ENGINE_FAST (1) ?
-    je      .L24                ;   yes -> fast path
-    ; ---- ENGINE_MEM ----
-    movq    4488(%rcx), %rdx    ; rdx = e->parsed (start of the TradeFx array)
-    salq    $5, %r8             ; r8 = i * 32 (shift, because sizeof(TradeFx) = 2^5)
-    movq    192(%rsp), %rbx     ; restore rbx
-    movq    200(%rsp), %rsi     ; restore rsi
-    addq    %r8, %rdx           ; rdx = &e->parsed[i]
-    movq    8(%rdx), %rax       ; rax = parsed[i].price
-    movq    %rax, (%r9)         ; *price_cents = price
-    addq    $216, %rsp          ; release the stack space
-    jmp     step_fx             ; tail call: step_fx returns straight to our caller
-```
-
-```asm
-step_fx:                        ; rcx = e, rdx = t (pointer to the TradeFx)
-    subq    $104, %rsp          ; stack frame (Windows x64 needs shadow space for calls)
-    movq    %rbx, 72(%rsp)      ; save rbx
-    movq    %rdx, %rbx          ; rbx = t (survives the calls below)
-    movq    8(%rdx), %rdx       ; argument 2 = t->price
-    movq    16(%rbx), %r8       ; argument 3 = t->qty
-    movq    %rsi, 80(%rsp)      ; save rsi
-    movq    %rcx, %rsi          ; rsi = e (survives the calls below)
-    addq    $2256, %rcx         ; argument 1 = &e->vwap_fx
-    movq    %rbp, 96(%rsp)      ; save rbp
-    leaq    3416(%rsi), %rbp    ; rbp = &e->sma_long_fx
+fixed_step:                     ; rcx = t (pointer to this trade's TradeFx)
+    pushq   %rbx                ; save rbx (callee-saved)
+    movq    %rcx, %rbx          ; rbx = t (survives the calls below)
+    subq    $64, %rsp           ; stack frame: 32-byte shadow space + spill slots
+    movq    8(%rcx), %rdx       ; argument 2 = t->price
+    movq    16(%rcx), %r8       ; argument 3 = t->qty
+    leaq    vwap(%rip), %rcx    ; argument 1 = &vwap
     call    vwap_fx_update      ; (call 1)
     movq    8(%rbx), %r8        ; argument 3 = t->price
     movq    (%rbx), %rdx        ; argument 2 = t->time
-    leaq    2320(%rsi), %r9     ; argument 4 = &e->finished_fx
-    leaq    2272(%rsi), %rcx    ; argument 1 = &e->bar_fx
+    leaq    finished(%rip), %r9 ; argument 4 = &finished
+    leaq    bar(%rip), %rcx     ; argument 1 = &bar
     call    ohlc_fx_update      ; (call 2)
     movq    8(%rbx), %rdx       ; argument 2 = t->price
-    leaq    2368(%rsi), %rcx    ; argument 1 = &e->sma_short_fx
+    leaq    short_sma(%rip), %rcx ; argument 1 = &short_sma
     call    sma_fx_push         ; (call 3)
     movq    8(%rbx), %rdx       ; argument 2 = t->price
-    movq    %rbp, %rcx          ; argument 1 = &e->sma_long_fx
+    leaq    long_sma(%rip), %rcx ; argument 1 = &long_sma
     call    sma_fx_push         ; (call 4)
-    leaq    2368(%rsi), %rcx    ; argument 1 = &e->sma_short_fx
+    leaq    short_sma(%rip), %rcx ; argument 1 = &short_sma
     call    sma_fx_ready        ; (call 5)
     testl   %eax, %eax          ; short window full?
-    jne     .L11                ;   yes -> continue below
-.L1:                            ; ---- common exit: rax already holds the signal ----
-    movq    72(%rsp), %rbx      ; restore rbx
-    movq    80(%rsp), %rsi      ; restore rsi
-    movq    96(%rsp), %rbp      ; restore rbp
-    addq    $104, %rsp          ; release the frame
-    ret
-.L11:
-    movq    %rbp, %rcx          ; argument 1 = &e->sma_long_fx
+    jne     .L13                ;   yes -> check the long window
+.L4:                            ; ---- common exit: eax already holds the signal ----
+    addq    $64, %rsp           ; release the frame
+    popq    %rbx                ; restore rbx
+    ret                         ; (eax = 0 = SIG_NONE if we came straight here)
+.L13:
+    leaq    long_sma(%rip), %rcx ; argument 1 = &long_sma
     call    sma_fx_ready        ; (call 6)
     testl   %eax, %eax          ; long window full?
-    je      .L1                 ;   no -> exit with eax = 0 = SIG_NONE
-    movq    %rbp, %rcx          ; argument 1 = &e->sma_long_fx
-    movl    8(%rsi), %ebx       ; ebx = e->long_win
+    je      .L4                 ;   no -> return eax = 0 = SIG_NONE
+    leaq    long_sma(%rip), %rcx ; argument 1 = &long_sma
+    movl    long_window(%rip), %ebx ; ebx = long_window (t is no longer needed)
     call    sma_fx_sum          ; (call 7) rax = long window sum
-    movl    4(%rsi), %r8d       ; r8d = e->short_win
-    leaq    2368(%rsi), %rcx    ; argument 1 = &e->sma_short_fx
-    movq    %rax, %rbp          ; rbp = long window sum
-    movl    %r8d, 60(%rsp)      ; save short_win across the call (r8 is caller-saved)
+    movl    short_window(%rip), %r8d ; r8d = short_window
+    leaq    short_sma(%rip), %rcx ; argument 1 = &short_sma
+    movq    %rax, 56(%rsp)      ; spill the long sum (rax is overwritten by the next call)
+    movl    %r8d, 52(%rsp)      ; spill short_window (r8 is caller-saved)
     call    sma_fx_sum          ; (call 8) rax = short window sum
-    movl    %ebx, 32(%rsp)      ; argument 5 = long_win (on the stack)
-    movl    60(%rsp), %r8d      ; argument 3 = short_win
-    movq    %rbp, %r9           ; argument 4 = long window sum
-    leaq    4464(%rsi), %rcx    ; argument 1 = &e->cross_fx
+    movl    %ebx, 32(%rsp)      ; argument 5 = long_window (on the stack)
+    movq    56(%rsp), %r9       ; argument 4 = long window sum
+    leaq    cross(%rip), %rcx   ; argument 1 = &cross
+    movl    52(%rsp), %r8d      ; argument 3 = short_window
     movq    %rax, %rdx          ; argument 2 = short window sum
-    call    crossover_fx_update ; (call 9) rax = the signal
-    jmp     .L1                 ; restore registers and return it
+    call    crossover_fx_update ; (call 9) eax = SIG_BUY / SIG_SELL / SIG_NONE
+    jmp     .L4                 ; return it
 ```
 
 **What it shows:**
-- `sizeof(TradeFx)` is 32, a power of two, so `parsed[i]` needs only a shift and an add.
+- The trade is reached through one pointer (`rcx = &list[i]`); its fields are plain loads
+  at fixed offsets 0, 8 and 16. The replay computes `&list[i]` with one shift by 5
+  (`sizeof(TradeFx)` = 32, a power of two) and an add.
+- The engine state is `static`, so every module's data is one `leaq name(%rip)` away:
+  no pointer chasing.
 - Once both windows are full, each trade makes **9 calls**. `sma_fx_ready` and `sma_fx_sum`
   do almost nothing, but they live in another `.c` file, so gcc cannot inline them at `-O2`.
-  The saving and restoring of `rbx`, `rsi`, `rbp` is also the price of those calls.
+  Saving `rbx` and spilling values to the stack is also the price of those calls.
 
 ---
 

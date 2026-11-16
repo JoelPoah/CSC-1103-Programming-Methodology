@@ -5,6 +5,7 @@
 #   make stageA     build stageA only (stageA_manual = Version 0, stageA_plot)
 #   make plotA      build stageA_plot and run it (writes stageA/signals.dat + signals.png)
 #   make stageC     build stageC only (stageC_malloc, stageC_replay/_rival + _malloc, + _asm on the Pi)
+#   make gui        build the GTK3 live replay window stageC/stageC_gui (needs GTK3, not part of 'make')
 #   make asm        write the -O2 assembly of the fixed-point kernels to stageC/asm/
 #   make ladder     build every version V0-V7 from src/ into bin/ (+ V8 on the Pi)
 #   make benchmark  build the -O0..-O3 benchmark tool (benchmark/benchmark.c)
@@ -132,9 +133,9 @@ ifeq ($(ASM_TAG),aarch64)
 LADDER += $(LADDER_V8)
 endif
 
-ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER) $(BENCHMARK)
+ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER) $(BENCHMARK) stageC/stageC_gui$(EXE)
 
-.PHONY: all stage0 stageA plotA stageC asm ladder benchmark clean
+.PHONY: all stage0 stageA plotA stageC gui asm ladder benchmark clean
 
 all: stage0 stageA stageC ladder
 
@@ -224,6 +225,15 @@ $(LADDER_V7): src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c sr
 
 $(LADDER_V8): src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c src/engine_asm/v8_ohlc_fx.s $(SRC_FX_CORE) $(SRC_H)
 	$(CC) $(CFLAGS_L) src/v5-v8_main_stageB_fixed.c src/store/v7-v8_trades_fx_fread.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX_CORE) src/engine_asm/v8_ohlc_fx.s -o $@
+
+# Stage C live replay window (GTK3). Not in 'make' / 'make all' because it needs GTK3:
+#   Windows: pacman -S mingw-w64-ucrt-x86_64-gtk3 mingw-w64-ucrt-x86_64-pkgconf (MSYS2 UCRT64)
+#   Pi:      sudo apt install libgtk-3-dev
+STAGEC_GUI = stageC/stageC_gui$(EXE)
+gui: $(STAGEC_GUI) $(STAGEC_REPLAY)
+
+$(STAGEC_GUI): stageC/stageC_gui.c
+	$(CC) -O2 -Wall stageC/stageC_gui.c $(shell pkg-config --cflags --libs gtk+-3.0) -o $@
 
 benchmark: $(BENCHMARK)
 
