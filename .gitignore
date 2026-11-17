@@ -37,6 +37,11 @@ stageA/stageA_manual
 stageC/stageC_malloc
 stageC/stageC_replay
 stageC/stageC_rival
+stageC/stageC_gui
+stageC/stageC_replay_malloc
+stageC/stageC_rival_malloc
+stageC/stageC_replay_asm
+stageC/stageC_rival_asm
 stageC/test_parser
 benchmark/benchmark
 

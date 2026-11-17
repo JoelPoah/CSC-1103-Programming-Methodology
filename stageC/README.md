@@ -13,7 +13,8 @@ On the Pi, add `-mcpu=cortex-a76` with `make stageC CFLAGS_C="-O2 -Wall -mcpu=co
 | 4 | per-trade latency: average and worst case | replay summary |
 | 5 | `gcc -S -O2` of the main loop, annotated | `make asm` (Yong Sheng) |
 | 6 | rival bot: P&L of V0 and fastest, money lost, sweep R 0.1→100 µs, plot | `stageC_rival.c`, `plot_rival.gnuplot` |
-| – | race demo: V0 vs fastest side by side, lag counter + P&L, LED | two terminals, see below |
+| – | race demo: V0 vs fastest side by side, lag counter + P&L, LED | two terminals, or the GUI `stageC_gui` (see "Live window") |
+| – | moving graph of the race (price, P&L, lag, money lost) | `plot_live.py` → `race_1000x_laptop.gif` |
 | – | every version still passes test20 | see "How to run" |
 
 ## Design: Stage C's engine is built on Stage B's
@@ -45,6 +46,8 @@ stageC/engine/  -- added in Stage C --
 
 stageC/stageC_replay.c            the replay: clock, lag, latency, LED, coloured signals, live P&L
 stageC/stageC_rival.c             per-trade timing of v0 and mem, rival bot P&L, R sweep
+stageC/stageC_gui.c               GTK3 window: runs stageC_replay (here or on the Pi over ssh) and draws it live
+stageC/plot_live.py               recorded --feed output -> animated GIF of the race
 ```
 
 `stream_engine` and `fixed_engine` add no new maths: they only call the modules above,
@@ -141,3 +144,83 @@ Options: `--engine v0|mem`, `--speed X` (0 = no clock), `--minutes M`, `--from-m
 (start later in the day, e.g. at a busy period), `--short/--long`, `--rival R_us`, `--led`,
 `--signals/--quiet`. If you stop a run with Ctrl-C, the LED keeps its last colour: reboot
 the Pi to give the LED back to the system.
+
+## Live window (`stageC_gui`) and the race GIF
+
+### `--feed N`: the replay's live output
+
+`stageC_replay ... --feed N` prints machine-readable lines instead of the status and
+signal lines (the summary is unchanged):
+
+```
+#H engine speed short long rival_us trades ts_first_us span_us      once, before the replay
+#F done total time_us price_cents pnl_lat pnl_proc lag_ns max_lag_ns buys sells won lost avg_proc_ns
+#S sig time_us price_cents latency_ns                                 one per BUY (1) / SELL (-1)
+```
+
+`#F` lines are spread evenly over the replayed market time (N of them). Like the other
+printing, they are written after the trade's time is taken, so they are not part of the
+measured processing time or latency. Signals and VWAP are unchanged (test20 and dev_1M
+checks still pass, Windows and Linux).
+
+### The GUI
+
+```sh
+make gui                 # builds stageC/stageC_gui (+ stageC_replay); needs GTK3:
+                         #   Windows (MSYS2 UCRT64 shell): pacman -S mingw-w64-ucrt-x86_64-gtk3 mingw-w64-ucrt-x86_64-pkgconf
+                         #   Pi: sudo apt install libgtk-3-dev
+./stageC/stageC_gui      # run from the project root
+```
+
+Left: the settings. **Run on** `This computer` or `Raspberry Pi (ssh)`; **Engines** race
+(v0 + mem at once), v0 only or mem only; trade file, speed, minutes, start minute, SMA
+windows, rival **R** (µs), and presets for the brief's runs (1× for 10 min, 100×, 1000×)
+and a 5000× race. Right: a scoreboard per engine (progress, market time, lag, max lag,
+average processing time, P&L with reaction = latency and = processing time, signals won,
+BUY / SELL), the **money lost to slow code** (P&L(mem) − P&L(v0) at the same market
+time), and three live charts: price with the latest BUY / SELL, P&L against the rival, and
+lag behind the replay clock. The replay's own summary appears in the output box at the end.
+
+**Window on the laptop, processing on the Pi.** With `Raspberry Pi (ssh)` the GUI runs
+
+```sh
+ssh -tt -o BatchMode=yes <host> "cd <Pi project folder> && [sudo] taskset -c 2|3 ./stageC/stageC_replay ... --feed 1500 2>&1"
+```
+
+so the Pi does the replay (v0 on core 2, mem on core 3, LED on mem's signals with `sudo`)
+and only the `#F` / `#S` lines travel to the window. Set up ssh key login first
+(`ssh-keygen`, then `ssh-copy-id pi@<pi>` or add the key to `~/.ssh/authorized_keys` on the
+Pi), because the GUI cannot type a password. Build `make stageC` on the Pi first. `-tt`
+makes the remote replay stop when you press **Stop**.
+
+Notes:
+- Each replay starts its own clock after loading the file. With **Start at minute** > 0,
+  v0 reads (and `sscanf`s) every earlier line first (`stream_skip`), so in a race it starts
+  later than mem: about 28 s on the laptop for minute 600. Lag is measured against each
+  engine's own clock, so the numbers are still right.
+- On a Windows laptop two replays share the CPU with the window. Times shown there are a
+  demo, not results: the measured results come from the Pi runs in `logs/stageC/`.
+- Windows Smart App Control may block a freshly built `.exe`. Rebuilding usually helps;
+  do not turn security settings off.
+
+### The GIF (`plot_live.py`)
+
+Record a race with `--feed`, then animate it on wall-clock time (an engine that is behind
+the replay clock is drawn behind):
+
+```sh
+./stageC/stageC_replay data/group_data/stress_full.csv --engine v0  --speed 1000 --feed 1500 > logs/stageC/feed/race_v0_1000x.txt &
+./stageC/stageC_replay data/group_data/stress_full.csv --engine mem --speed 1000 --feed 1500 > logs/stageC/feed/race_mem_1000x.txt
+python stageC/plot_live.py logs/stageC/feed/race_v0_1000x.txt logs/stageC/feed/race_mem_1000x.txt -o stageC/race_1000x_pi.gif --title "Pi 5, 1000x"
+```
+
+(on the Pi, add `taskset -c 2` / `taskset -c 3`; needs `pip install matplotlib pillow`).
+
+`race_1000x_laptop.gif` (and `race_1000x_laptop_final.png`) were recorded on the
+**Windows laptop** (15 Nov 2026, both engines at once, unpinned), from
+`logs/stageC/feed/race_*_1000x_laptop.txt`. There v0 averaged 10.1 µs per trade, more than
+the 9.7 µs available at 1000×, and fell up to **14.2 s** behind the clock; mem stayed
+within 42 ms. Money lost by the end: **+64.23 USDT** (reaction = latency). The Pi results
+are different (v0 1.19 µs, max lag 9.6 ms; see `logs/stageC/RESULTS_SUMMARY.md`). Make a
+Pi GIF with the commands above for the report.
+
