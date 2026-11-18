@@ -9,7 +9,7 @@ On the Pi, add `-mcpu=cortex-a76` with `make stageC CFLAGS_C="-O2 -Wall -mcpu=co
 |---|---|---|
 | 1 | malloc'd array sized to the file, compare memory | `stageC_malloc.c`, `engine/trades_malloc.*` (Leroi), `docs/leroi_stageB_C.md` §4 |
 | 2 | replay in timestamp order: real speed ≥ 10 min, full day at 100× and 1000× | `stageC_replay.c` |
-| 3 | LED green BUY / red SELL + coloured terminal (CSC1104) | `stageC_replay.c --led` |
+| 3 | LED green BUY / red SELL + coloured terminal (CSC1104) | `stageC_replay.c --led` (onboard LED) or `--led-gpio` (breadboard, GPIO 17 red / 27 green) |
 | 4 | per-trade latency: average and worst case | replay summary |
 | 5 | `gcc -S -O2` of the main loop, annotated | `make asm` (Yong Sheng) |
 | 6 | rival bot: P&L of V0 and fastest, money lost, sweep R 0.1→100 µs, plot | `stageC_rival.c`, `plot_rival.gnuplot` |
@@ -43,6 +43,7 @@ stageC/engine/  -- added in Stage C --
   fixed_engine.*                  fastest (mem): TradeFx array + vwap_fx, ohlc_fx, sma_fx, signal_fx
   rival.*                         rival bot P&L rules (cents, exact)
   trades_malloc.*                 Leroi's malloc'd double array (memory comparison, stageC_malloc.c)
+  led_gpio.*                      breadboard LEDs for --led-gpio: GPIO 17 red, GPIO 27 green (sysfs)
 
 stageC/stageC_replay.c            the replay: clock, lag, latency, LED, coloured signals, live P&L
 stageC/stageC_rival.c             per-trade timing of v0 and mem, rival bot P&L, R sweep
@@ -126,6 +127,8 @@ make stageC
 sudo taskset -c 2 ./stageC/stageC_replay data/group_data/stress_full.csv --speed 1 --minutes 10 --led   # real speed, 10 min
 sudo taskset -c 2 ./stageC/stageC_replay data/group_data/stress_full.csv --speed 100  --led             # ~14.4 min
 sudo taskset -c 2 ./stageC/stageC_replay data/group_data/stress_full.csv --speed 1000 --led             # ~1.5 min
+# same, on breadboard LEDs (GPIO 17 = red, GPIO 27 = green) instead of the onboard LED:
+sudo taskset -c 2 ./stageC/stageC_replay data/group_data/stress_full.csv --speed 1 --minutes 10 --led-gpio
 
 # Stage C 6: rival bot + sweep -> stageC/rival_sweep.dat -> stageC/rival_sweep.png
 taskset -c 2 ./stageC/stageC_rival data/group_data/stress_full.csv
@@ -141,9 +144,11 @@ sudo taskset -c 3 ./stageC/stageC_replay data/group_data/stress_full.csv --engin
 ```
 
 Options: `--engine v0|mem`, `--speed X` (0 = no clock), `--minutes M`, `--from-min M`
-(start later in the day, e.g. at a busy period), `--short/--long`, `--rival R_us`, `--led`,
-`--signals/--quiet`. If you stop a run with Ctrl-C, the LED keeps its last colour: reboot
-the Pi to give the LED back to the system.
+(start later in the day, e.g. at a busy period), `--short/--long`, `--rival R_us`, `--led`
+(onboard status LED) or `--led-gpio` (breadboard: GPIO 17 red, GPIO 27 green, header pins
+11 and 13), `--signals/--quiet`. If you stop a run with Ctrl-C, the LED keeps its last
+colour: reboot the Pi to give the onboard LED back to the system; the breadboard LEDs are
+switched off by the next `--led-gpio` run.
 
 ## Live window (`stageC_gui`) and the race GIF
 
@@ -180,6 +185,9 @@ average processing time, P&L with reaction = latency and = processing time, sign
 BUY / SELL), the **money lost to slow code** (P&L(mem) − P&L(v0) at the same market
 time), and three live charts: price with the latest BUY / SELL, P&L against the rival, and
 lag behind the replay clock. The replay's own summary appears in the output box at the end.
+**LED (Pi)**: Off, the onboard status LED (`--led`) or breadboard LEDs on GPIO 17 red /
+GPIO 27 green (`--led-gpio`). Either one runs the replay with `sudo`; in a race only mem
+drives the LED.
 
 **Window on the laptop, processing on the Pi.** With `Raspberry Pi (ssh)` the GUI runs
 

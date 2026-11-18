@@ -12,15 +12,16 @@
  *                       line with next_trade(), double prices, naive SMA
  *                 mem = fastest version (engine/fixed_engine.c, ladder V7): takes
  *                       the trade from the TradeFx array, fixed-point modules
- *   3) SIGNAL:  each BUY / SELL is printed in colour and, with --led on the Pi,
- *               shown on the status LED (green = BUY, red = SELL)
+ *   3) SIGNAL:  each BUY / SELL is printed in colour and, on the Pi, shown on
+ *               an LED (green = BUY, red = SELL): --led = the onboard status
+ *               LED, --led-gpio = breadboard LEDs on GPIO 17 (red) / 27 (green)
  *   4) SUMMARY: average and worst processing time and latency, the biggest lag
  *               behind the replay clock, and the P&L against the rival bot
  *
  * Usage (from the project root):
  *   stageC_replay <file.csv> [--engine v0|mem] [--speed X] [--minutes M]
  *                 [--from-min M] [--short S] [--long L] [--rival R_us]
- *                 [--led] [--signals | --quiet] [--feed N]
+ *                 [--led | --led-gpio] [--signals | --quiet] [--feed N]
  *     --feed N        machine-readable live output for the GUI (stageC_gui) and
  *                     the GIF maker (plot_live.py): N "#F" sample lines spread
  *                     evenly over the replayed market time, one "#S" line per
@@ -31,7 +32,8 @@
  *     --from-min M    start M market minutes after the first trade
  *     --short/--long  SMA windows (default 35 and 60)
  *     --rival R_us    rival reaction time in microseconds (default 1)
- *     --led           drive the Pi's status LED (run with sudo)
+ *     --led           drive the Pi's onboard status LED (run with sudo)
+ *     --led-gpio      drive breadboard LEDs: GPIO 17 red, GPIO 27 green (run with sudo)
  *     --signals       print every signal
  *     --quiet         print only the summary (no signal or status lines)
  *
@@ -44,13 +46,15 @@
  *                   sudo ./stageC/stageC_replay data/group_data/stress_full.csv --engine mem --speed 5000 --led
  *
  * If you stop it early with Ctrl-C, the LED keeps its last colour: reboot the
- * Pi to give the LED back to the system (see the brief, section 7).
+ * Pi to give the onboard LED back to the system (see the brief, section 7).
+ * The breadboard LEDs are switched off by the next --led-gpio run.
  */
 #include "../helper_function/timing.h"   /* must come first (see timing.h) */
 #include <stdio.h>
 #include <stdlib.h>                      /* atoi, free */
 #include <string.h>                      /* strcmp */
 #include "../helper_function/led.h"
+#include "engine/led_gpio.h"             /* breadboard LEDs, GPIO 17 / 27     */
 #include "engine/signal.h"               /* SIG_BUY, SIG_SELL, SIG_NONE */
 #include "engine/sma.h"                  /* MAX_WIN, the largest SMA window */
 #include "engine/fixed.h"                /* PRICE_SCALE (cents)              */
@@ -62,6 +66,11 @@
 /* ---- the two engines ---- */
 #define ENGINE_V0  0
 #define ENGINE_MEM 1
+
+/* ---- which LED (opt_led) ---- */
+#define LED_NONE    0
+#define LED_ONBOARD 1                   /* --led:      Pi status LED (led.h)      */
+#define LED_GPIO    2                   /* --led-gpio: GPIO 17 red, GPIO 27 green */
 
 /* ---- terminal colours (ANSI escape codes) ---- */
 #define GREEN "\033[32m"
@@ -83,7 +92,7 @@ int    opt_from_min = 0;         /* minutes to skip at the start        */
 int    opt_short = 35;           /* short SMA window                    */
 int    opt_long = 60;            /* long SMA window                     */
 double opt_rival_us = 1.0;       /* rival reaction time, microseconds   */
-int    opt_led = 0;              /* 1 = drive the LED                   */
+int    opt_led = LED_NONE;       /* LED_NONE, LED_ONBOARD or LED_GPIO   */
 int    opt_signals = -1;         /* 1 = print signals, -1 = decide later */
 int    opt_quiet = 0;            /* 1 = summary only                    */
 int    opt_feed = 0;             /* > 0 = live feed with this many samples */
@@ -95,13 +104,14 @@ int led_colour = SIG_NONE;
 void print_usage(char *program) {
     printf("usage: %s <file.csv> [--engine v0|mem] [--speed X] [--minutes M]\n", program);
     printf("          [--from-min M] [--short S] [--long L] [--rival R_us]\n");
-    printf("          [--led] [--signals | --quiet] [--feed N]\n");
+    printf("          [--led | --led-gpio] [--signals | --quiet] [--feed N]\n");
 }
 
 /* read_options
  * What:    copy the command-line arguments into the opt_ variables
- * Steps:   look at argv[1], argv[2], ... one at a time. --led, --signals and
- *          --quiet stand alone; every other option is followed by a value.
+ * Steps:   look at argv[1], argv[2], ... one at a time. --led, --led-gpio,
+ *          --signals and --quiet stand alone; every other option is followed
+ *          by a value.
  * Returns: 1 if OK, 0 if an argument is wrong or missing
  */
 int read_options(int argc, char *argv[]) {
@@ -109,7 +119,9 @@ int read_options(int argc, char *argv[]) {
 
     while (i < argc) {
         if (strcmp(argv[i], "--led") == 0) {
-            opt_led = 1;
+            opt_led = LED_ONBOARD;
+        } else if (strcmp(argv[i], "--led-gpio") == 0) {
+            opt_led = LED_GPIO;
         } else if (strcmp(argv[i], "--signals") == 0) {
             opt_signals = 1;
         } else if (strcmp(argv[i], "--quiet") == 0) {
@@ -270,7 +282,8 @@ void wait_until(long long target) {
 }
 
 /* show_led
- * What:    green on for BUY, red on for SELL (the other one off)
+ * What:    green on for BUY, red on for SELL (the other one off), on the
+ *          onboard LED (--led) or the breadboard LEDs (--led-gpio)
  * Note:    called AFTER the time is measured: changing the LED is a system
  *          call that takes microseconds
  */
@@ -278,12 +291,22 @@ void show_led(int sig) {
     if (sig == led_colour) {
         return;                         /* already showing this colour */
     }
-    if (sig == SIG_BUY) {
-        led_off(LED_RED);
-        led_on(LED_GREEN);
+    if (opt_led == LED_GPIO) {
+        if (sig == SIG_BUY) {
+            gpio_led_off(GPIO_LED_RED);
+            gpio_led_on(GPIO_LED_GREEN);
+        } else {
+            gpio_led_off(GPIO_LED_GREEN);
+            gpio_led_on(GPIO_LED_RED);
+        }
     } else {
-        led_off(LED_GREEN);
-        led_on(LED_RED);
+        if (sig == SIG_BUY) {
+            led_off(LED_RED);
+            led_on(LED_GREEN);
+        } else {
+            led_off(LED_GREEN);
+            led_on(LED_RED);
+        }
     }
     led_colour = sig;
 }
@@ -366,8 +389,11 @@ int main(int argc, char *argv[]) {
            (load_end - load_start) / 1e6, n, (int)sizeof(TradeFx),
            (double)n * sizeof(TradeFx) / 1e6);
 
-    if (opt_led) {
+    if (opt_led == LED_ONBOARD) {
         led_init();
+    }
+    if (opt_led == LED_GPIO) {
+        gpio_led_init();
     }
 
     /* live feed: "#H engine speed short long rival_us trades ts_first_us span_us",
@@ -476,10 +502,13 @@ int main(int argc, char *argv[]) {
     }
     wall_end = now_ns();
 
-    if (opt_led) {
+    if (opt_led == LED_ONBOARD) {
         led_off(LED_GREEN);
         led_off(LED_RED);
         led_cleanup();
+    }
+    if (opt_led == LED_GPIO) {
+        gpio_led_cleanup();            /* both off, pins released */
     }
 
     /* ---- 5) results from the engine ---- */

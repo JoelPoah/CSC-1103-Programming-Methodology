@@ -21,6 +21,8 @@
  *                           so the Pi does the processing (and the LED), and this
  *                           window (e.g. on the Windows laptop) only draws.
  *                           Needs ssh key login (no password prompt).
+ *   "LED (Pi)" = Off, the onboard status LED (--led) or breadboard LEDs on
+ *   GPIO 17 red / GPIO 27 green (--led-gpio); both run the replay with sudo.
  *   "Engines" = Race (v0 and mem at the same time, pinned to cores 2 and 3 on
  *   the Pi), v0 only, or mem only.
  *
@@ -59,6 +61,11 @@
 #define MODE_RACE 0
 #define MODE_V0   1
 #define MODE_MEM  2
+
+/* "LED (Pi)" choices = the replay's LED options */
+#define LED_OFF     0
+#define LED_ONBOARD 1         /* --led:      Pi status LED                  */
+#define LED_GPIO    2         /* --led-gpio: breadboard, GPIO 17 red, 27 green */
 
 #define FIELD_PRICE 0
 #define FIELD_PNL   1
@@ -109,7 +116,7 @@ GtkWidget *window, *chart;
 GtkWidget *combo_where, *entry_host, *entry_folder, *entry_program, *entry_file;
 GtkWidget *combo_mode, *combo_preset, *combo_speed;
 GtkWidget *spin_minutes, *spin_from, *spin_short, *spin_long, *spin_rival;
-GtkWidget *check_pin, *check_led, *button_start, *button_stop;
+GtkWidget *check_pin, *combo_led, *button_start, *button_stop;
 GtkWidget *score[MAX_RUNS][10];
 GtkWidget *label_lost, *label_state;
 GtkTextBuffer *log_buffer;
@@ -282,13 +289,16 @@ int speed_value(void) {
 /* replay_args
  * What:    the replay's options as one string, e.g.
  *          "data/x.csv --engine mem --speed 1000 ... --feed 1500"
+ *          led = LED_OFF, LED_ONBOARD (--led) or LED_GPIO (--led-gpio)
  */
 gchar *replay_args(const char *engine, const char *file, int led) {
     char rival[32];
     const char *led_flag = "";
 
-    if (led) {
+    if (led == LED_ONBOARD) {
         led_flag = " --led";
+    } else if (led == LED_GPIO) {
+        led_flag = " --led-gpio";
     }
     g_ascii_formatd(rival, sizeof rival, "%g",
                     gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin_rival)));
@@ -416,9 +426,12 @@ int any_running(void) {
 /* on_start - Start button: one replay, or two for the race */
 void on_start(GtkButton *button, gpointer data) {
     int mode = gtk_combo_box_get_active(GTK_COMBO_BOX(combo_mode));
-    int led = gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(check_led)) &&
-              gtk_combo_box_get_active(GTK_COMBO_BOX(combo_where)) == RUN_PI;
+    int led = LED_OFF;
     int i;
+
+    if (gtk_combo_box_get_active(GTK_COMBO_BOX(combo_where)) == RUN_PI) {
+        led = gtk_combo_box_get_active(GTK_COMBO_BOX(combo_led));
+    }
 
     if (any_running()) {
         return;
@@ -478,7 +491,7 @@ void on_where(GtkComboBox *box, gpointer data) {
     gtk_widget_set_sensitive(entry_host, pi);
     gtk_widget_set_sensitive(entry_folder, pi);
     gtk_widget_set_sensitive(check_pin, pi);
-    gtk_widget_set_sensitive(check_led, pi);
+    gtk_widget_set_sensitive(combo_led, pi);
     gtk_widget_set_sensitive(entry_program, !pi);
 }
 
@@ -932,8 +945,13 @@ GtkWidget *build_settings(void) {
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(check_pin), TRUE);
     add_row(grid, row++, "Pin (Pi)", check_pin);
 
-    check_led = gtk_check_button_new_with_label("Pi status LED (sudo)");
-    add_row(grid, row++, "LED (Pi)", check_led);
+    combo_led = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_led), "Off");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_led), "Onboard status LED (sudo)");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_led),
+                                   "Breadboard: GPIO 17 red, GPIO 27 green (sudo)");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(combo_led), LED_OFF);
+    add_row(grid, row++, "LED (Pi)", combo_led);
 
     title = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(title), "<b>Replay</b>");
