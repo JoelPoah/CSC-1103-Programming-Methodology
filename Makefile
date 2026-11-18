@@ -91,6 +91,8 @@ ENGINE_C        = $(ENGINE_C_CORE) stageC/engine/trades_fx_fread.c stageC/engine
 ENGINE_C_MALLOC = $(ENGINE_C_CORE) stageC/engine/trades_fx_malloc.c stageC/engine/ohlc_fx.c
 ENGINE_C_ASM    = $(ENGINE_C_CORE) stageC/engine/trades_fx_fread.c stageC/engine/ohlc_fx.s
 ENGINE_C_H  = $(wildcard stageC/engine/*.h) $(HELPERS) helper_function/trade_io.h
+# the replay also drives the breadboard LEDs (GPIO 17 / 27) with --led-gpio
+LED_GPIO_C  = stageC/engine/led_gpio.c
 
 # extra flags for Stage C, e.g. make stageC CFLAGS_C="-O2 -mcpu=cortex-a76" on the Pi
 CFLAGS_C = -O2 -Wall
@@ -192,22 +194,22 @@ $(STAGEC_MALLOC): stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageC/en
 	$(CC) $(CFLAGS_C) stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageB/engine/vwap.c stageB/engine/ohlc.c stageB/engine/sma.c stageB/engine/signal.c stageB/engine/report.c helper_function/trade_io.c -o $@
 
 # default variant: fread loader + C kernels (= ladder V7)
-$(STAGEC_REPLAY): stageC/stageC_replay.c $(ENGINE_C) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C) -o $@
+$(STAGEC_REPLAY): stageC/stageC_replay.c $(ENGINE_C) $(LED_GPIO_C) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C) $(LED_GPIO_C) -o $@
 
 $(STAGEC_RIVAL): stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_C_H)
 	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C) -lm -o $@
 
 # _malloc variant: fgets loader, file read twice (= ladder V6)
-$(STAGEC_REPLAY_MALLOC): stageC/stageC_replay.c $(ENGINE_C_MALLOC) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C_MALLOC) -o $@
+$(STAGEC_REPLAY_MALLOC): stageC/stageC_replay.c $(ENGINE_C_MALLOC) $(LED_GPIO_C) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C_MALLOC) $(LED_GPIO_C) -o $@
 
 $(STAGEC_RIVAL_MALLOC): stageC/stageC_rival.c $(ENGINE_C_MALLOC) $(ENGINE_C_H)
 	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C_MALLOC) -lm -o $@
 
 # _asm variant: V7 with the hand-written AArch64 ohlc_fx.s (Pi only)
-$(STAGEC_REPLAY_ASM): stageC/stageC_replay.c $(ENGINE_C_ASM) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C_ASM) -o $@
+$(STAGEC_REPLAY_ASM): stageC/stageC_replay.c $(ENGINE_C_ASM) $(LED_GPIO_C) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C_ASM) $(LED_GPIO_C) -o $@
 
 $(STAGEC_RIVAL_ASM): stageC/stageC_rival.c $(ENGINE_C_ASM) $(ENGINE_C_H)
 	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C_ASM) -lm -o $@
