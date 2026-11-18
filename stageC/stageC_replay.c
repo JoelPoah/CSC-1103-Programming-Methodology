@@ -14,14 +14,16 @@
  *                       the trade from the TradeFx array, fixed-point modules
  *   3) SIGNAL:  each BUY / SELL is printed in colour and, on the Pi, shown on
  *               an LED (green = BUY, red = SELL): --led = the onboard status
- *               LED, --led-gpio = breadboard LEDs on GPIO 17 (red) / 27 (green)
+ *               LED, --led-gpio = breadboard LEDs on GPIO 17 (red) / 27 (green).
+ *               With --led-every N the LED instead flashes green on every Nth
+ *               BUY and red on every Nth SELL.
  *   4) SUMMARY: average and worst processing time and latency, the biggest lag
  *               behind the replay clock, and the P&L against the rival bot
  *
  * Usage (from the project root):
  *   stageC_replay <file.csv> [--engine v0|mem] [--speed X] [--minutes M]
  *                 [--from-min M] [--short S] [--long L] [--rival R_us]
- *                 [--led | --led-gpio] [--signals | --quiet] [--feed N]
+ *                 [--led | --led-gpio] [--led-every N] [--signals | --quiet] [--feed N]
  *     --feed N        machine-readable live output for the GUI (stageC_gui) and
  *                     the GIF maker (plot_live.py): N "#F" sample lines spread
  *                     evenly over the replayed market time, one "#S" line per
@@ -34,6 +36,9 @@
  *     --rival R_us    rival reaction time in microseconds (default 1)
  *     --led           drive the Pi's onboard status LED (run with sudo)
  *     --led-gpio      drive breadboard LEDs: GPIO 17 red, GPIO 27 green (run with sudo)
+ *     --led-every N   flash the LED (200 ms) on every Nth BUY (green) and every Nth
+ *                     SELL (red), counted separately; 0 = default: the LED holds
+ *                     the colour of the latest signal
  *     --signals       print every signal
  *     --quiet         print only the summary (no signal or status lines)
  *
@@ -82,6 +87,7 @@
 #define US_PER_MIN       60000000LL     /* microseconds in a minute     */
 #define STATUS_EVERY_NS  1000000000LL   /* one status line per second   */
 #define SLEEP_IF_MORE_NS 20000000LL     /* sleep if more than 20 ms early */
+#define FLASH_NS         200000000LL    /* --led-every: one flash = 200 ms */
 
 /* ---- options from the command line (filled in by read_options) ---- */
 char  *opt_path = NULL;          /* the CSV file                        */
@@ -93,6 +99,7 @@ int    opt_short = 35;           /* short SMA window                    */
 int    opt_long = 60;            /* long SMA window                     */
 double opt_rival_us = 1.0;       /* rival reaction time, microseconds   */
 int    opt_led = LED_NONE;       /* LED_NONE, LED_ONBOARD or LED_GPIO   */
+int    opt_led_every = 0;        /* > 0 = flash on every Nth BUY / SELL */
 int    opt_signals = -1;         /* 1 = print signals, -1 = decide later */
 int    opt_quiet = 0;            /* 1 = summary only                    */
 int    opt_feed = 0;             /* > 0 = live feed with this many samples */
@@ -100,11 +107,16 @@ int    opt_feed = 0;             /* > 0 = live feed with this many samples */
 /* colour the LED is showing now (SIG_NONE = off) */
 int led_colour = SIG_NONE;
 
+/* --led-every: BUY and SELL signals counted so far, and when the flash ends */
+long long led_buys_seen = 0;
+long long led_sells_seen = 0;
+long long led_off_at = 0;
+
 /* print_usage - how to run the program */
 void print_usage(char *program) {
     printf("usage: %s <file.csv> [--engine v0|mem] [--speed X] [--minutes M]\n", program);
     printf("          [--from-min M] [--short S] [--long L] [--rival R_us]\n");
-    printf("          [--led | --led-gpio] [--signals | --quiet] [--feed N]\n");
+    printf("          [--led | --led-gpio] [--led-every N] [--signals | --quiet] [--feed N]\n");
 }
 
 /* read_options
@@ -152,6 +164,8 @@ int read_options(int argc, char *argv[]) {
                 opt_long = atoi(argv[i + 1]);
             } else if (strcmp(argv[i], "--feed") == 0) {
                 opt_feed = atoi(argv[i + 1]);
+            } else if (strcmp(argv[i], "--led-every") == 0) {
+                opt_led_every = atoi(argv[i + 1]);
             } else if (strcmp(argv[i], "--rival") == 0) {
                 if (sscanf(argv[i + 1], "%lf", &opt_rival_us) != 1) {
                     printf("bad rival time: %s\n", argv[i + 1]);
@@ -176,8 +190,9 @@ int read_options(int argc, char *argv[]) {
         printf("bad windows: need 1 <= short < long <= %d\n", MAX_WIN);
         return 0;
     }
-    if (opt_speed < 0 || opt_minutes < 0 || opt_from_min < 0 || opt_feed < 0) {
-        printf("speed, minutes, from-min and feed must not be negative\n");
+    if (opt_speed < 0 || opt_minutes < 0 || opt_from_min < 0 || opt_feed < 0 ||
+        opt_led_every < 0) {
+        printf("speed, minutes, from-min, feed and led-every must not be negative\n");
         return 0;
     }
     /* the feed replaces the status and signal lines */
@@ -281,34 +296,82 @@ void wait_until(long long target) {
     }
 }
 
+/* led_light
+ * What:    switch the BUY colour (green) or the SELL colour (red) on (1) or
+ *          off (0), on the onboard LED (--led) or the breadboard LEDs (--led-gpio)
+ */
+void led_light(int sig, int on) {
+    int gpio_led = GPIO_LED_RED;
+    int onboard_led = LED_RED;
+
+    if (sig == SIG_BUY) {
+        gpio_led = GPIO_LED_GREEN;
+        onboard_led = LED_GREEN;
+    }
+    if (opt_led == LED_GPIO) {
+        if (on) {
+            gpio_led_on(gpio_led);
+        } else {
+            gpio_led_off(gpio_led);
+        }
+    } else {
+        if (on) {
+            led_on(onboard_led);
+        } else {
+            led_off(onboard_led);
+        }
+    }
+}
+
 /* show_led
- * What:    green on for BUY, red on for SELL (the other one off), on the
- *          onboard LED (--led) or the breadboard LEDs (--led-gpio)
+ * What:    a signal on the LED.
+ *          Default: green on for BUY, red on for SELL (the other one off),
+ *          held until the next signal of the other kind.
+ *          --led-every N: count BUYs and SELLs separately; on every Nth one,
+ *          flash its colour for FLASH_NS (end_flash switches it off).
  * Note:    called AFTER the time is measured: changing the LED is a system
  *          call that takes microseconds
  */
-void show_led(int sig) {
+void show_led(int sig, long long now) {
+    if (opt_led_every > 0) {
+        if (sig == SIG_BUY) {
+            led_buys_seen++;
+            if (led_buys_seen % opt_led_every != 0) {
+                return;
+            }
+        } else {
+            led_sells_seen++;
+            if (led_sells_seen % opt_led_every != 0) {
+                return;
+            }
+        }
+        if (led_colour != SIG_NONE && led_colour != sig) {
+            led_light(led_colour, 0);   /* the other colour's flash ends early */
+        }
+        led_light(sig, 1);
+        led_colour = sig;
+        led_off_at = now + FLASH_NS;
+        return;
+    }
     if (sig == led_colour) {
         return;                         /* already showing this colour */
     }
-    if (opt_led == LED_GPIO) {
-        if (sig == SIG_BUY) {
-            gpio_led_off(GPIO_LED_RED);
-            gpio_led_on(GPIO_LED_GREEN);
-        } else {
-            gpio_led_off(GPIO_LED_GREEN);
-            gpio_led_on(GPIO_LED_RED);
-        }
-    } else {
-        if (sig == SIG_BUY) {
-            led_off(LED_RED);
-            led_on(LED_GREEN);
-        } else {
-            led_off(LED_GREEN);
-            led_on(LED_RED);
-        }
+    if (led_colour != SIG_NONE) {
+        led_light(led_colour, 0);
     }
+    led_light(sig, 1);
     led_colour = sig;
+}
+
+/* end_flash
+ * What:    --led-every: switch the LED off once its flash has lasted FLASH_NS
+ * Note:    checked after every trade, after the time is taken
+ */
+void end_flash(long long now) {
+    if (opt_led_every > 0 && led_colour != SIG_NONE && now >= led_off_at) {
+        led_light(led_colour, 0);
+        led_colour = SIG_NONE;
+    }
 }
 
 int main(int argc, char *argv[]) {
@@ -471,7 +534,7 @@ int main(int argc, char *argv[]) {
             rival_on_signal(&rival, sig, lat_ns, price);
             rival_on_signal(&rival_proc, sig, proc_ns, price);
             if (opt_led) {
-                show_led(sig);
+                show_led(sig, t_done);
             }
             if (opt_signals) {
                 show_signal(sig, i + 1, list[i].time, price, lat_ns, rival.pnl);
@@ -494,6 +557,9 @@ int main(int argc, char *argv[]) {
 
         /* e) a status line once a second (printing is not counted as latency) */
         now = now_ns();
+        if (opt_led) {
+            end_flash(now);
+        }
         if (!opt_quiet && now >= next_status) {
             show_status(name, list[i].time, done, last - first, lag_ns, max_lag_ns,
                         &rival, buys, sells);

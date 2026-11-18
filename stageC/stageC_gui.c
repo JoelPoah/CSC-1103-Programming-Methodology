@@ -23,6 +23,11 @@
  *                           Needs ssh key login (no password prompt).
  *   "LED (Pi)" = Off, the onboard status LED (--led) or breadboard LEDs on
  *   GPIO 17 red / GPIO 27 green (--led-gpio); both run the replay with sudo.
+ *   "Flash every" = 0: the LED holds the latest signal's colour; N > 0: it
+ *   flashes green on every Nth BUY and red on every Nth SELL (--led-every N).
+ *   "mem build (Pi)" = C (stageC_replay: fread loader + C ohlc_fx.c, ladder V7)
+ *   or AArch64 asm (stageC_replay_asm: same, with Yong Sheng's ohlc_fx.s, as V8).
+ *   v0 is the same in both builds, so only mem's program changes.
  *   "Engines" = Race (v0 and mem at the same time, pinned to cores 2 and 3 on
  *   the Pi), v0 only, or mem only.
  *
@@ -66,6 +71,10 @@
 #define LED_OFF     0
 #define LED_ONBOARD 1         /* --led:      Pi status LED                  */
 #define LED_GPIO    2         /* --led-gpio: breadboard, GPIO 17 red, 27 green */
+
+/* "mem build (Pi)" choices */
+#define BUILD_C   0           /* ./stageC/stageC_replay      (C ohlc_fx.c, ladder V7) */
+#define BUILD_ASM 1           /* ./stageC/stageC_replay_asm  (AArch64 ohlc_fx.s, V8)  */
 
 #define FIELD_PRICE 0
 #define FIELD_PNL   1
@@ -117,6 +126,9 @@ GtkWidget *combo_where, *entry_host, *entry_folder, *entry_program, *entry_file;
 GtkWidget *combo_mode, *combo_preset, *combo_speed;
 GtkWidget *spin_minutes, *spin_from, *spin_short, *spin_long, *spin_rival;
 GtkWidget *check_pin, *combo_led, *button_start, *button_stop;
+GtkWidget *flash_box;             /* "Flash every" slider + number box */
+GtkWidget *combo_build;           /* mem build on the Pi: C or AArch64 asm */
+GtkAdjustment *adj_flash;         /* their shared value (0 = hold colour) */
 GtkWidget *score[MAX_RUNS][10];
 GtkWidget *label_lost, *label_state;
 GtkTextBuffer *log_buffer;
@@ -293,12 +305,17 @@ int speed_value(void) {
  */
 gchar *replay_args(const char *engine, const char *file, int led) {
     char rival[32];
-    const char *led_flag = "";
+    char led_flag[64] = "";
+    int every = (int)gtk_adjustment_get_value(adj_flash);
 
     if (led == LED_ONBOARD) {
-        led_flag = " --led";
+        g_strlcpy(led_flag, " --led", sizeof led_flag);
     } else if (led == LED_GPIO) {
-        led_flag = " --led-gpio";
+        g_strlcpy(led_flag, " --led-gpio", sizeof led_flag);
+    }
+    if (led != LED_OFF && every > 0) {
+        g_snprintf(led_flag + strlen(led_flag), sizeof led_flag - strlen(led_flag),
+                   " --led-every %d", every);
     }
     g_ascii_formatd(rival, sizeof rival, "%g",
                     gtk_spin_button_get_value(GTK_SPIN_BUTTON(spin_rival)));
@@ -340,6 +357,13 @@ int start_one(int slot, const char *engine, int core, int led) {
         gchar *host = entry_text(entry_host);
         gchar *folder = entry_text(entry_folder);
         gchar *prefix;
+        const char *program = "stageC_replay";
+
+        /* mem can run the AArch64 assembly build (only built on the Pi) */
+        if (strcmp(engine, "mem") == 0 &&
+            gtk_combo_box_get_active(GTK_COMBO_BOX(combo_build)) == BUILD_ASM) {
+            program = "stageC_replay_asm";
+        }
 
         if (gtk_toggle_button_get_active(GTK_TOGGLE_BUTTON(check_pin))) {
             prefix = g_strdup_printf("taskset -c %d ", core);
@@ -351,7 +375,7 @@ int start_one(int slot, const char *engine, int core, int led) {
             g_free(prefix);
             prefix = with_sudo;
         }
-        remote = g_strdup_printf("cd %s && %s./stageC/stageC_replay %s 2>&1", folder, prefix, args);
+        remote = g_strdup_printf("cd %s && %s./stageC/%s %s 2>&1", folder, prefix, program, args);
         argv = g_new0(gchar *, 8);
         argv[0] = g_strdup("ssh");
         argv[1] = g_strdup("-tt");                   /* remote replay stops when we do */
@@ -492,6 +516,8 @@ void on_where(GtkComboBox *box, gpointer data) {
     gtk_widget_set_sensitive(entry_folder, pi);
     gtk_widget_set_sensitive(check_pin, pi);
     gtk_widget_set_sensitive(combo_led, pi);
+    gtk_widget_set_sensitive(flash_box, pi);
+    gtk_widget_set_sensitive(combo_build, pi);
     gtk_widget_set_sensitive(entry_program, !pi);
 }
 
@@ -953,6 +979,23 @@ GtkWidget *build_settings(void) {
     gtk_combo_box_set_active(GTK_COMBO_BOX(combo_led), LED_OFF);
     add_row(grid, row++, "LED (Pi)", combo_led);
 
+    /* flash every N signals: a slider and a number box sharing one value */
+    adj_flash = gtk_adjustment_new(1000, 0, 5000, 1, 100, 0);
+    flash_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 4);
+    {
+        GtkWidget *scale = gtk_scale_new(GTK_ORIENTATION_HORIZONTAL, adj_flash);
+        GtkWidget *number = gtk_spin_button_new(adj_flash, 1, 0);
+
+        gtk_scale_set_draw_value(GTK_SCALE(scale), FALSE);
+        gtk_widget_set_size_request(scale, 140, -1);
+        gtk_widget_set_tooltip_text(flash_box,
+            "0 = the LED holds the latest signal's colour. "
+            "N = flash green on every Nth BUY and red on every Nth SELL.");
+        gtk_box_pack_start(GTK_BOX(flash_box), scale, TRUE, TRUE, 0);
+        gtk_box_pack_start(GTK_BOX(flash_box), number, FALSE, FALSE, 0);
+    }
+    add_row(grid, row++, "Flash every N BUY/SELL", flash_box);
+
     title = gtk_label_new(NULL);
     gtk_label_set_markup(GTK_LABEL(title), "<b>Replay</b>");
     gtk_label_set_xalign(GTK_LABEL(title), 0.0);
@@ -975,9 +1018,18 @@ GtkWidget *build_settings(void) {
     combo_mode = gtk_combo_box_text_new();
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_mode), "Race: v0 vs mem");
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_mode), "v0 only (Version 0)");
-    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_mode), "mem only (fastest, V7)");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_mode), "mem only (fastest)");
     gtk_combo_box_set_active(GTK_COMBO_BOX(combo_mode), MODE_RACE);
     add_row(grid, row++, "Engines", combo_mode);
+
+    combo_build = gtk_combo_box_text_new();
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_build), "C (ladder V7)");
+    gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_build), "AArch64 asm OHLC (V8)");
+    gtk_combo_box_set_active(GTK_COMBO_BOX(combo_build), BUILD_C);
+    gtk_widget_set_tooltip_text(combo_build,
+        "C = stageC_replay. AArch64 asm = stageC_replay_asm: the same mem engine with "
+        "Yong Sheng's ohlc_fx.s (built by make stageC on the Pi only). v0 is the same in both.");
+    add_row(grid, row++, "mem build (Pi)", combo_build);
 
     combo_preset = gtk_combo_box_text_new();
     gtk_combo_box_text_append_text(GTK_COMBO_BOX_TEXT(combo_preset), "(custom)");

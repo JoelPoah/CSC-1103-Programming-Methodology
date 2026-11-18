@@ -146,7 +146,9 @@ sudo taskset -c 3 ./stageC/stageC_replay data/group_data/stress_full.csv --engin
 Options: `--engine v0|mem`, `--speed X` (0 = no clock), `--minutes M`, `--from-min M`
 (start later in the day, e.g. at a busy period), `--short/--long`, `--rival R_us`, `--led`
 (onboard status LED) or `--led-gpio` (breadboard: GPIO 17 red, GPIO 27 green, header pins
-11 and 13), `--signals/--quiet`. If you stop a run with Ctrl-C, the LED keeps its last
+11 and 13), `--led-every N` (flash 200 ms on every Nth BUY in green and every Nth SELL in
+red, counted separately; without it the LED holds the latest signal's colour),
+`--signals/--quiet`. If you stop a run with Ctrl-C, the LED keeps its last
 colour: reboot the Pi to give the onboard LED back to the system; the breadboard LEDs are
 switched off by the next `--led-gpio` run.
 
@@ -187,7 +189,11 @@ time), and three live charts: price with the latest BUY / SELL, P&L against the 
 lag behind the replay clock. The replay's own summary appears in the output box at the end.
 **LED (Pi)**: Off, the onboard status LED (`--led`) or breadboard LEDs on GPIO 17 red /
 GPIO 27 green (`--led-gpio`). Either one runs the replay with `sudo`; in a race only mem
-drives the LED.
+drives the LED. **mem build (Pi)**: C (`stageC_replay`, ladder V7) or AArch64 asm OHLC
+(`stageC_replay_asm`, Yong Sheng's `ohlc_fx.s`, as V8); only mem's program changes, v0 is
+the same in both builds. **Flash every N BUY/SELL** (slider, default 1000): the LED flashes on every
+Nth BUY / SELL (`--led-every N`); 0 = hold the latest signal's colour. A full day of
+stress_full has about 20,000 of each, so 1000 gives about 20 green and 20 red flashes.
 
 **Window on the laptop, processing on the Pi.** With `Raspberry Pi (ssh)` the GUI runs
 
