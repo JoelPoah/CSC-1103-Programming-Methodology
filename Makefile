@@ -156,7 +156,7 @@ endif
 
 ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER) $(BENCHMARK) stageC/stageC_gui$(EXE)
 
-.PHONY: all stage0 stageA plotA stageC gui asm ladder ladder_asm benchmark benchmark_asm clean
+.PHONY: all stage0 stageA plotA stageC gui asm ladder ladder_asm soa benchmark benchmark_asm clean
 
 all: stage0 stageA stageC ladder
 
@@ -251,6 +251,13 @@ $(LADDER_V8): $(SRC_V58) $(SRC_FX_CORE) src/engine_asm/v8_ohlc_fx.s $(SRC_H)
 # V8, SMA only: V5 with the assembly SMA, the OHLC stays in C
 $(LADDER_V8_SMA): $(SRC_V58) $(SRC_FX_BASE) src/engine_fx/v5-v7_ohlc_fx.c src/engine_asm/v8_sma_fx.s $(SRC_H)
 	$(CC) $(CFLAGS_L) $(SRC_V58) $(SRC_FX_BASE) src/engine_fx/v5-v7_ohlc_fx.c src/engine_asm/v8_sma_fx.s -o $@
+
+# Struct-of-Arrays (Leroi, stretch goal): V5 with one array per field instead of
+# one array of structs. Compared with V5 only, so it is NOT in LADDER: "make soa".
+SOA = bin/soa_stageB_fixed$(EXE)
+soa: $(SOA)
+$(SOA): src/soa_main_stageB_fixed.c src/store/soa_trades_fx.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) $(SRC_H)
+	$(CC) $(CFLAGS_L) src/soa_main_stageB_fixed.c src/store/soa_trades_fx.c src/reader/v5-v8_read_trade_fx.c $(SRC_FX) -o $@
 
 # the two assembly versions on their own; the .s files only assemble on the Pi
 ifeq ($(ASM_TAG),aarch64)
