@@ -43,6 +43,7 @@ stageC/stageC_rival_malloc
 stageC/stageC_replay_asm
 stageC/stageC_rival_asm
 stageC/test_parser
+stageC/test_sort
 benchmark/benchmark
 
 # Generated data dumps and temporary artifacts

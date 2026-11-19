@@ -104,8 +104,16 @@ every `if` has braces. The files copied from Stage B are kept exactly as Stage B
   speed. It also prints V0's own-signal P&L for comparison.
 - **Open position:** if the day ends holding 1 BTC, that buy is not counted. P&L covers
   closed round trips only (otherwise one unmatched buy subtracts about 76k USDT).
-- **Percentiles (p50 / p99) are not reported.** They are an optional stretch goal and need
-  sorting 8.9 million times; the brief requires the average and worst case only.
+- **Percentiles (p50 / p99), stretch goal: `--percentiles`.** Off by default, so the
+  default runs match the earlier logs. With it, the replay keeps every processing time and
+  latency in two malloc'd arrays (16 B per trade, 143 MB for stress_full), sorts them after
+  the replay and prints p50 and p99 (nearest rank). The sort is `engine/percentile.c`,
+  built on Joel's quicksort with two changes: a **middle pivot** (the last element is the
+  worst pivot on sorted data) and **Hoare partition** (Lomuto's `< pivot` puts all equal
+  values on one side, and our timings repeat millions of times, e.g. 50 ns). Both changes
+  avoid n²/2 steps. `stageC/test_sort` checks it against `qsort` and times both: on 8.9
+  million values it was 1.4–2.2× faster than `qsort` on a laptop, because `qsort` calls a
+  compare function for every comparison.
 
 ## How to run
 
