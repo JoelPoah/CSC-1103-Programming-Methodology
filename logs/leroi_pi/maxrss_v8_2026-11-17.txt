@@ -1,0 +1,4 @@
+== max RSS of the rebuilt V8s (2026-11-17, performance governor), median of 3 (MB = 10^6 bytes)
+  v5_stageB_fixed_point        full run    286.9 MB   dev run    33.1 MB
+  v8_stageB_asm_ohlc           full run    286.9 MB   dev run    33.1 MB
+  v8_stageB_asm_sma            full run    286.9 MB   dev run    33.1 MB

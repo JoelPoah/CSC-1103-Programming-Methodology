@@ -39,18 +39,22 @@ Measured on the group's `src/` ladder: V4 (`double`, running-sum SMA) vs V5 (fix
 
 | | V4 double | V5 fixed-point | speedup |
 |---|---|---|---|
-| Laptop, process phase (median of 5) | 92.8 ms | 70.2 ms | 1.32× |
-| Laptop, load + process (median of 5) | 656.8 ms | 502.8 ms | 1.31× |
-| Pi 5, process phase (median of 5) | 218.1 ms | 163.3 ms | 1.34× |
-| Pi 5, load + process (median of 5) | 1962.0 ms | 1409.7 ms | 1.39× |
+| Laptop, process phase (median of 5) | 89.9 ms | 72.0 ms | 1.25× |
+| Laptop, load + process (median of 5) | 662.7 ms | 509.0 ms | 1.30× |
+| Pi 5, process phase (median of 5) | 218.1 ms | 162.9 ms | 1.34× |
+| Pi 5, load + process (median of 5) | 1958.5 ms | 1408.2 ms | 1.39× |
 
-(Laptop measured 2026-11-15, Pi 5 2026-11-15/16, both with `benchmark/ladder_bench`,
-`stress_full.csv`, `-O2`, `taskset -c 2`. V4 → V5 also changes the parser (straight to integers) and the module style,
+(Laptop and Pi 5 measured 2026-11-17 with the `performance` CPU governor, both with
+`benchmark/ladder_bench`, `stress_full.csv`, `-O2`, `taskset -c 2`. V4 → V5 also changes the parser (straight to integers) and the module style,
 so the process phase is the fair comparison. My first version, where only the number type
-changed (`stageB_inmem` vs `stageB_fixed`, 2026-11-03), gave 79.9 vs 70.6 ms = 1.13×.)
+changed (`stageB_inmem` vs `stageB_fixed`, 2026-11-03), gave 79.9 vs 70.6 ms = 1.13×.
+First ladder run, 2026-11-15/16 with the default governors: laptop process 92.8 vs 70.2 ms
+= 1.32×, load + process 1.31×; Pi process 218.1 vs 163.3 ms = 1.34×, load + process 1.39×.
+The Reason below was written from that run.)
 
 - `test20.csv`: PASS (V5), laptop and Pi
 - Pi `perf stat` (whole program): 33% fewer instructions (15.88 → 10.58 × 10⁹), IPC 3.03 → 2.80
+- Laptop `perf stat` (whole program): 31% fewer instructions (16.00 → 11.02 × 10⁹), IPC 4.82 → 4.31
 - `dev_1M.csv` signals: 2553 BUY / 2469 SELL (V4 double: 2465 / 2464)
 - `dev_1M.csv` VWAP: 76217.01291611 (V4 double: 76217.01291587; exact: 76217.01291611)
 - `stress_full.csv`: 20943 BUY / 20060 SELL, VWAP 76718.67569889 (exact: 76718.67569889)
@@ -81,8 +85,8 @@ because the prices are fixed-point.
 Correctness was as predicted. The signal counts moved to the exact answer (2553 / 2469)
 because on the 17,132 flat-price trades whole numbers give d = 0 exactly, while `double`
 leaves a tiny error of random sign. The VWAP matched the `double` value to 6 decimal places
-(76217.012916…) and differed in the 7th, the low end of my 6 to 8 places. The `double`
-error is rounding from a million additions building up.
+when rounded (both 76217.012916; the difference is 2.4×10⁻⁷), the low end of my 6 to 8
+places. The `double` error is rounding that builds up over a million additions.
 
 ## Prediction 2 (Stage C): malloc array sized to the file vs fixed global array
 
@@ -144,13 +148,16 @@ with my `malloc` loader). Both use the 32-byte `TradeFx` struct.
 | `stress_full`: reserved (Massif peak) | 325.0 MB | 290.7 MB | 324.6 MB | 290.3 MB |
 | `stress_full`: max RSS | 289.3 MB | 287.7 MB | 286.8 MB | 287.0 MB |
 | Memcheck errors / definitely lost (`dev_1M`) | 0 errors / 0 B | 0 errors / 0 B ("All heap blocks were freed") | 0 errors / 0 B | 0 errors / 0 B ("All heap blocks were freed") |
-| Load phase, stress_full (median of 5) | 432.5 ms | 569.0 ms (+31.6%) | 1246.5 ms | 1633.3 ms (+31.0%) |
-| Process phase, stress_full (median of 5) | 70.2 ms | 69.9 ms (−0.4%) | 163.3 ms | 163.2 ms (−0.1%) |
+| Load phase, stress_full (median of 5) | 437.0 ms | 572.8 ms (+31.1%) | 1245.2 ms | 1636.4 ms (+31.4%) |
+| Process phase, stress_full (median of 5) | 72.0 ms | 70.6 ms (−1.9%) | 162.9 ms | 163.7 ms (+0.5%) |
 
-(Laptop 2026-11-15, Pi 5 2026-11-16. Massif with `--pages-as-heap=yes`, single run. Max RSS is the median of
-3 runs (`logs/leroi_pi/maxrss.c`). Times from `benchmark/ladder_bench`, `-O2`, `taskset -c 2`.
+(Memory: laptop 2026-11-15, Pi 5 2026-11-16. Massif with `--pages-as-heap=yes`, single run. Max RSS is the median of
+3 runs (`logs/leroi_pi/maxrss.c`). Times: 2026-11-17 rerun with the `performance` CPU governor,
+`benchmark/ladder_bench`, `-O2`, `taskset -c 2`.
 "dev_1M" rows = `./prog dev` (test20 + dev_1M); "stress_full" rows = full run.
-MB = 10⁶ bytes. Raw output: `logs/leroi_laptop/`.)
+MB = 10⁶ bytes. Raw output: `logs/leroi_laptop/` and `logs/leroi_pi/`.
+First ladder run, 2026-11-15/16 with the default governors: load +31.6% (laptop) / +31.0% (Pi),
+process −0.4% / −0.1%. The Reason below was written from that run.)
 
 - `test20.csv`: PASS (V6)
 - Signals / VWAP match V5: yes, identical output on all three files (laptop and Pi)
@@ -166,8 +173,8 @@ the load time.
 The global array reserves 320 MB of addresses as soon as the program starts (it is in
 `.bss`), so Massif with `--pages-as-heap=yes` always shows about 325 MB. The operating
 system only hands out real memory for a page when the program first writes to it, though.
-dev_1M writes only the first 32 MB of the array, so the other 288 MB never gets any RAM.
-That is why `malloc` saves 288 MB of reserved memory on dev_1M but almost nothing in max RSS
+dev_1M writes only the first 32 MB of the array, so the other 288.0 MB never gets any RAM.
+That is why `malloc` saves 288.0 MB of reserved memory on dev_1M but almost nothing in max RSS
 (34.5 vs 34.0 MB on the laptop, 33.1 vs 33.1 MB on the Pi). On stress_full both versions
 really use the ~286 MB the trades need. On the Pi, `malloc` even used 0.2 MB more on
 stress_full: the Pi hands out memory in 16 KB pages instead of 4 KB, so small differences
@@ -177,19 +184,18 @@ The process phase was the same, as predicted (70.2 vs 69.9 ms on the laptop, 163
 163.2 ms on the Pi). The loop reads the same 32-byte structs one after another, and the CPU
 does not care whether they sit in `.bss` or on the heap.
 
-Loading was 31% slower instead of 10 to 20%. My estimate assumed parsing takes about 97% of
+Loading was 31.6% (laptop) and 31.0% (Pi) slower instead of 10 to 20%. My estimate assumed parsing takes about 97% of
 the time, as it did with `sscanf`, and with that slow reader my first version really was
 only 7.7% slower. The ladder uses Lucas's fast parser, so the real reading pass is now
 cheap, while the counting pass still has to read all 678 MB of text with `fgets`. That fixed
 extra cost (about 136 ms on the laptop, 387 ms on the Pi) is a much bigger share of a fast
 load than of a slow one. The Pi's `perf stat` agrees, with 24% more instructions and 47%
-more cache misses for V6. How much a second read costs depends on how fast the real parse
-is.
+more cache misses for V6.
 
 Memcheck was clean, as predicted: every `malloc` has a matching `free`, including on the
 error paths. There was not even any "still reachable" memory, because the reader closes
 each file with `fclose`, which frees its buffer. The fixed-array version showed only the
-file buffers in the heap summary (13 KB on the laptop, 17 KB on the Pi), because a global
+file buffers in the heap summary (13 kB on the laptop, 17 kB on the Pi), because a global
 array is not heap memory.
 
 The Pi turned out to have 8 GB, not 4 GB, so memory is even less of a limit than I assumed.
@@ -240,29 +246,35 @@ stress_full, `-O2`, `taskset -c 2`, 5 runs, median):
 | Laptop max RSS (stress_full run) | 1.9 MB | — | 289.0 MB |
 
 Official measurement on the group's `src/` ladder: V2 (streaming, fast parser, naive SMA)
-vs V3 (the same, loaded into the global array first). Laptop 2026-11-15, `benchmark/ladder_bench`.
+vs V3 (the same, loaded into the global array first). Laptop and Pi 5 2026-11-17,
+`benchmark/ladder_bench`, `performance` CPU governor.
 
 | | V2 streaming | V3 process only | V3 load + process |
 |---|---|---|---|
-| Laptop time (median of 5) | 828.7 ms | 193.4 ms | 756.1 ms |
-| Laptop speedup vs streaming | 1.00× | 4.28× | 1.10× |
-| Pi 5 time (median of 5) | 2523.9 ms | 816.8 ms | 2558.9 ms |
-| Pi 5 speedup vs streaming | 1.00× | 3.09× | 0.99× |
+| Laptop time (median of 5) | 826.7 ms | 194.0 ms | 771.2 ms |
+| Laptop speedup vs streaming | 1.00× | 4.26× | 1.07× |
+| Pi 5 time (median of 5) | 2518.7 ms | 817.3 ms | 2556.9 ms |
+| Pi 5 speedup vs streaming | 1.00× | 3.08× | 0.99× |
 | Laptop max RSS (stress_full run) | 2.2 MB | — | 289.0 MB |
 | Pi 5 max RSS (stress_full run) | 1.6 MB | — | 286.9 MB |
 
-(Pi 5: 2026-11-15/16, same method.)
+(Max RSS: 2026-11-15/16. First ladder run, 2026-11-15/16 with the default governors: laptop
+828.7 / 193.4 / 756.1 ms (process 4.28×, load + process 1.10×), Pi 2523.9 / 816.8 / 2558.9 ms
+(3.09×, 0.99×). The Reason below was written from that run.)
 
 - Output identical: yes, on laptop and Pi (both: stress_full VWAP 76718.67569936, 20386 BUY / 20176
   SELL; the ladder's V2/V3 use the naive SMA, so the counts differ from the first measurement)
-- On the laptop, with the fast parser, load + process was faster than streaming (1.10×),
-  where I predicted the same time or slower. Loading is 74% of V3's time (it was ~97% with
+- On the laptop, with the fast parser, load + process was faster than streaming (1.07×),
+  where I predicted the same time or slower. Loading is 75% of V3's time (it was ~97% with
   `sscanf`).
-- On the Pi, load + process was 1.4% slower than streaming (0.99×), as predicted. Loading
-  is 68% of V3's time, and the Pi takes 3.0 to 4.2× as long as the laptop (predicted 2 to
+- On the Pi, load + process was 1.5% slower than streaming (0.99×), as predicted. Loading
+  is 68% of V3's time, and the Pi takes 3.01 to 4.21× as long as the laptop (predicted 2 to
   4×).
 - Pi `perf stat`: V3 has the same instructions per trade and IPC as V2 (3.01 vs 3.03), but
-  2.8× more cache misses (14.5 M vs 5.2 M).
+  2.48× more cache misses per trade (1.47 vs 0.59: 14.61 M misses over 9.93 M trades, since V3
+  also runs test20 and dev_1M, vs 5.30 M over 8.93 M).
+- Laptop `perf stat` (measured in the rerun): V3 has the same instructions per trade as V2
+  (1845 vs 1833), but a 9% higher IPC (4.63 vs 4.23), so 8% fewer cycles per trade (398 vs 434).
 
 **Reason:** (2026-11-16) I wrote this prediction for the helper reader (`sscanf`), and for
 those programs it was right. With the ladder's fast parser, two parts came out differently.
@@ -274,8 +286,8 @@ taking it out of the timed part saves much less: 4.28× on the laptop and 3.09×
 
 On the Pi, load plus process was 0.99×, as predicted. V3 does the same parsing and the same
 maths as V2 and also writes 286 MB into the array and reads it back. The Pi's `perf stat`
-shows the same instructions per trade and the same IPC (3.01 vs 3.03), with 2.8× more cache
-misses, and that extra memory traffic accounts for the whole 1.4%.
+shows the same instructions per trade and the same IPC (3.01 vs 3.03), with 2.50× more cache
+misses per trade, and that extra memory traffic accounts for the whole 1.4%.
 
 On the laptop, load plus process was 1.10× faster, which I did not predict and cannot fully
 explain. The Pi's counters show that V3 does the same work as V2. My best guess is that the
@@ -283,7 +295,7 @@ laptop's larger caches and much wider out-of-order core run two simple loops (pa
 everything, then compute everything) better than one loop that switches between parsing and
 maths on every trade. Checking it would need `perf stat` for V2 and V3 on the laptop.
 
-The Pi took 3.0 to 4.2× as long as the laptop. The 4.2× (V3's naive process phase) is a
+The Pi took 3.05 to 4.22× as long as the laptop. The 4.22× (V3's naive process phase) is a
 little above my 2 to 4×; Prediction 4 explains why the naive SMA hits the Pi harder. Memory
 was as predicted: 2.2 MB (laptop) and 1.6 MB (Pi) for streaming, and about 287 to 289 MB in
 memory.
@@ -313,17 +325,20 @@ same data is used again, as in the replay or when several strategies run on one 
 
 Measured on the group's `src/` ladder: V3 (naive) vs V4 (running sum), process phase,
 stress_full, `-O2`, `taskset -c 2`. The laptop baseline for the Pi prediction is now the
-ladder's own laptop number (2.08×, 2026-11-15); the 2.63× in the status line came from my
-first version (`stageB_inmem` with and without `-DNAIVE_SMA`).
+ladder's own laptop number (2.16× in the 2026-11-17 rerun, 2.08× in the first run); the
+2.63× in the status line came from my first version (`stageB_inmem` with and without
+`-DNAIVE_SMA`).
 
 | | V3 naive | V4 running sum | Speedup |
 |---|---|---|---|
-| Laptop, process phase (median of 5) | 193.4 ms | 92.8 ms | 2.08× |
-| Pi 5, process phase (median of 5) | 816.8 ms | 218.1 ms | 3.75× |
+| Laptop, process phase (median of 5) | 194.0 ms | 89.9 ms | 2.16× |
+| Pi 5, process phase (median of 5) | 817.3 ms | 218.1 ms | 3.75× |
 
-(Pi 5: 2026-11-15/16, `benchmark/ladder_bench`, `-O2`, `taskset -c 2`. Pi `perf stat`: 23%
-fewer instructions with the running sum (20.55 → 15.88 × 10⁹), IPC 3.01 → 3.03. Whole run
-2558.9 → 1962.0 ms, 1.30×.)
+(Laptop and Pi 5: 2026-11-17, `benchmark/ladder_bench`, `performance` CPU governor, `-O2`,
+`taskset -c 2`. Pi `perf stat`: 23% fewer instructions with the running sum (20.55 → 15.88 ×
+10⁹), IPC 3.01 → 3.03. Whole run 2556.9 → 1958.5 ms, 1.31×. First ladder run, 2026-11-15/16
+with the default governors: laptop 193.4 → 92.8 ms (2.08×), Pi 816.8 → 218.1 ms (3.75×),
+whole run on the Pi 1.30×. The Reason below was written from that run.)
 
 **Reason:** (2026-11-16) The prediction was right: 3.75× on the Pi, inside 3 to 5× and well
 above the laptop's 2.08×. The laptop baseline is now 2.08×, not 2.63×, because the ladder's
@@ -365,7 +380,8 @@ faster on the Pi and only 1.15× faster on the laptop.
 **Result:**
 
 Checked on the group's `src/` ladder (the same three kinds of version as named above).
-Laptop: 2026-11-15, `-O2`, from `benchmark/ladder_bench` logs.
+Laptop: 2026-11-17, `-O2`, from `benchmark/ladder_bench` logs (the first run, 2026-11-15,
+gave the same answers).
 
 | Version | Laptop VWAP / BUY / SELL (stress_full) | Pi 5 VWAP / BUY / SELL (stress_full) | Same? |
 |---|---|---|---|
@@ -373,9 +389,10 @@ Laptop: 2026-11-15, `-O2`, from `benchmark/ladder_bench` logs.
 | V3 (double, naive) | 76718.67569936 / 20386 / 20176 | 76718.67569936 / 20386 / 20176 | yes |
 | V5 (fixed-point) | 76718.67569889 / 20943 / 20060 | 76718.67569889 / 20943 / 20060 | yes |
 | V6 (fixed-point, malloc) | 76718.67569889 / 20943 / 20060 | 76718.67569889 / 20943 / 20060 | yes |
-| test20, every version | PASS | PASS (all 45 builds, V0–V8, every flag set) | yes |
+| test20, every version | PASS | PASS (all 50 builds, V0 to V8, every flag set) | yes |
 
-(Pi 5: gcc 14.2.0, `-O2`, 2026-11-15/16. dev_1M also identical for every version. The
+(Pi 5: gcc 14.2.0, `-O2`, 2026-11-17; the first run, 2026-11-15/16 with 45 builds, gave the
+same answers. dev_1M also identical for every version. The
 `double` VWAP matches to all 8 printed decimals, so if gcc used fused multiply-add on the
 Pi, it did not change any printed digit.)
 
@@ -393,10 +410,124 @@ For the `double` VWAP, I checked the machine code. On the Pi, gcc 14 turned
 laptop's x86-64 build has no FMA instruction at all. The Pi therefore rounds that line once
 instead of twice, and its `sum_pq` really is slightly different. Each rounding difference is
 about 10⁻¹⁶ of the value, though, and even after millions of additions the difference stays
-far below the 8th decimal place of the VWAP that the program prints. The effect I predicted
-exists but does not change any printed digit.
+far below the 8th decimal place of the VWAP that the program prints, so the effect I
+predicted is real but never reaches a printed digit.
 
 `test20.csv` passed on the Pi for every version at every optimisation level (all 45 builds).
+
+## Prediction 6 (stretch goal): Struct-of-Arrays vs array of structs
+
+**Date:** 2026-11-19  **Signed:** Leroi
+**Status:** written before the Struct-of-Arrays version is written or run. Nothing in it has
+been measured yet.
+
+**What is compared:** V5 (one global array of `TradeFx` structs) against a new version that
+is V5 with each field in its own global array (`soa_time[]`, `soa_price[]`, `soa_qty[]`,
+`soa_is_buy[]`). The reader, the fixed-point modules and the loop's work stay the same; only
+the memory layout changes. Measured on `stress_full.csv`, `-O2`, `taskset -c 2`,
+`performance` governor, median of 5, laptop and Pi.
+
+**Expected:**
+
+*Process phase: a small gain, about 0–10% faster* (laptop 72.0 ms → about 65–72 ms;
+Pi 162.9 ms → about 147–163 ms).
+- `TradeFx` is 32 bytes, so a 64-byte cache line holds 2 trades. The loop reads `time`,
+  `price` and `qty` (24 bytes) and never reads `is_buy` (only the test20 table prints it).
+  With separate arrays it reads 24 bytes per trade instead of 32, so 25% fewer cache lines
+  (0.375 instead of 0.5 per trade).
+- But I don't think memory is what limits this loop. V5 reads the array at only about
+  1.75 GB/s on the Pi (286 MB in 163 ms) and 4 GB/s on the laptop, and it reads it in order,
+  so the hardware prefetcher can load the next lines early. Each trade takes about
+  44 cycles on the Pi, mostly spent on the work itself (the calls to the VWAP, OHLC, SMA
+  and crossover functions in other `.c` files, and the updates inside them). Fewer bytes per trade should help only a little.
+- It could even come out the same or slightly slower: the loop now follows three arrays
+  instead of one, which needs more registers and three address streams.
+
+*Pi vs laptop:* about the same small gain on both. If one gains more, it will be the Pi,
+because its memory system and caches are smaller.
+
+*Load phase and whole run: no real change (within ±3%).* Loading is 88% (Pi) and 86%
+(laptop) of V5's run and is limited by reading and parsing the text, which does not change.
+So even a 10% faster process phase moves the whole run by only about 1%.
+
+*Memory: clearly less, and this I can predict exactly.*
+- Reserved (global arrays): 3 × 80 MB + 40 MB = **280 MB** instead of 320 MB.
+- Physical (max RSS) on stress_full: the trades need 28 bytes each instead of 32, so about
+  **250 MB of arrays instead of 286 MB**. Max RSS about 251 MB (Pi) and 254 MB (laptop),
+  against 286.8 / 289.3 MB for V5. The 4 bytes saved per trade are the padding at the end
+  of every struct.
+
+*perf stat:* about the same number of instructions (±3%). Somewhat fewer level-1 cache
+misses on the Pi (about 5–15% fewer for the whole program), because the process phase loads
+fewer lines; the load phase, which is most of the run, does not change.
+
+*Correctness:* exactly the same answers as V5, because only where the numbers are stored
+changes: `test20.csv` passes, dev_1M VWAP 76217.01291611 with 2553 BUY / 2469 SELL,
+stress_full VWAP 76718.67569889 with 20943 BUY / 20060 SELL, the same on the laptop and the
+Pi.
+
+**Result:**
+
+Laptop, 2026-11-19: V5 and V5-SoA in the same session, one warm-up run each, then 5 runs
+alternating the two, `stress_full.csv`, `-O2`, `taskset -c 2`, `performance` governor.
+Raw logs: `logs/leroi_laptop/soa_2026-11-19/`.
+
+| | V5 (array of structs) | V5-SoA | Change | Predicted |
+|---|---|---|---|---|
+| Process phase (median of 5) | 68.6 ms | 66.8 ms | 1.03× faster (−2.7%) | 0–10% faster |
+| Load phase (median of 5) | 434.4 ms | 433.8 ms | −0.1% | ±3% |
+| Whole stress_full run, load + process (median of 5) | 502.9 ms | 500.4 ms | −0.5% | ±3% |
+| Reserved (`.bss`, from `size`) | 320.0 MB | 280.0 MB | −40.0 MB | 280 MB |
+| Max RSS, full run (median of 3) | 289.5 MB | 259.2 MB | −30.2 MB | about 254 MB |
+| Instructions (`perf stat`, whole program) | 11.02 × 10⁹ | 11.08 × 10⁹ | +0.5% | ±3% |
+| Cycles | 2.59 × 10⁹ | 2.55 × 10⁹ | −1.3% | |
+| L3 references | 25.55 M | 24.19 M | −5.3% | |
+| L3 misses | 21.67 M | 19.91 M | −8.1% | (predicted for the Pi's L1: 5–15% fewer) |
+
+- The 5 process times varied by only 0.3–0.4% (standard deviation ÷ mean) for each
+  version, so the 2.7% gain is larger than the run-to-run noise.
+- One SoA load time was slower (486.2 ms in run 4); the median is not affected.
+- Output identical to V5 on all three files (test20 passes; dev_1M VWAP 76217.01291611,
+  2553 BUY / 2469 SELL; stress_full VWAP 76718.67569889, 20943 BUY / 20060 SELL).
+- Max RSS is 5 MB above my prediction. Possible cause (not checked): this laptop has
+  transparent huge pages set to `always`, so the memory may be given out in 2 MB blocks, and
+  each of the four arrays then ends in a partly used block, where V5's single array has one.
+- V5's times in this session are 0.6–4.7% faster than in the official 2026-11-17 run
+  (process / load / total 72.0 / 437.0 / 509.0 ms), which is why both versions were timed
+  together here and compared only with each other.
+- Pi: TODO (not measured yet).
+
+**Reason:** (2026-11-19, laptop only; the Pi part is still to be measured) Most of the
+prediction was right. The process phase got 2.7% faster, inside the 0–10% I predicted, and
+the load phase and the whole run did not change.
+
+The speedup comes from moving fewer cache lines, as I expected. The number of instructions
+stayed the same (+0.5%), so the CPU did the same work. What changed is the memory traffic:
+on stress_full the process phase now reads 214 MB instead of 286 MB (3.35 M cache lines
+instead of 4.46 M), and the load phase writes 250 MB instead of 286 MB (3.91 M lines
+instead of 4.46 M). That is about 1.7 M fewer lines, and `perf stat` counted 1.76 M fewer
+L3 misses, so the counters match the cache-line count.
+
+The gain is small for the reason I gave: memory was not what limited the loop. V5 reads its
+array in order at only about 4 GB/s, so the hardware prefetcher already fetches the next
+lines before they are needed. Most of the 7.7 ns per trade is the work itself (the calls
+into the VWAP, OHLC, SMA and crossover functions), so 25% fewer bytes saves only 2.7% of the
+time. The whole run moved by only 0.5% because loading is 86% of it, and loading is limited
+by reading and parsing the text, which did not change.
+
+The memory saving was clear, as predicted: 40 MB less reserved (280 MB, exactly as
+calculated) and 30 MB less physical memory, because the four arrays drop the 4 bytes of
+padding at the end of every struct. I was 5 MB too low on the max RSS (259 MB, not 254 MB).
+My prediction assumed the RAM used is just the data plus V5's small overhead. A possible
+reason it is higher, which I have not checked, is that this laptop's transparent huge pages
+are set to `always`, so memory may be given out in 2 MB blocks, and four arrays end in four
+partly used blocks where V5's one array ends in one.
+
+My cache-miss prediction was for the Pi's L1 cache, so it is still to be checked. On the
+laptop, perf counts the L3 cache, and those misses fell by 8.1%.
+
+Conclusion so far: Struct-of-Arrays is worth it here for the memory (30 MB less) more than
+for the speed (2.7% on the process phase, 0.5% on the whole run).
 
 ## Findings for the report
 
@@ -423,6 +554,7 @@ applied as written.
 
 The group's `src/` ladder confirmed this on 2026-11-15: V0 to V3 (double, naive) give
 2509 / 2469, V4 (double, running sum) gives 2465 / 2464, and V5 to V7 (fixed-point) give
+2553 / 2469. The 2026-11-17 rerun gave the same counts, and both new V8 builds also give
 2553 / 2469.
 
 `test20.csv` passes for every version because 20 trades are too few for rounding error to
