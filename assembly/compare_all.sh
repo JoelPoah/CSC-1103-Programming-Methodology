@@ -28,24 +28,24 @@ RUNS=${1:-5}
 PROGS="stageB_inmem stageB_inmem_sma stageB_inmem_ohlc stageB_inmem_asm \
        stageB_fixed stageB_fixed_sma stageB_fixed_ohlc stageB_fixed_asm"
 
-COMMON="stageB/engine/signal.c stageB/engine/report.c helper_function/trade_io.c"
-IM="stageB/stageB_inmem.c stageB/engine/trades.c stageB/engine/vwap.c $COMMON"
-FX="stageB/stageB_fixed.c stageB/engine/trades_fx.c stageB/engine/vwap_fx.c \
-    stageB/engine/signal_fx.c $COMMON"
+COMMON="dev/stageB/engine/signal.c dev/stageB/engine/report.c helper_function/trade_io.c"
+IM="dev/stageB/stageB_inmem.c dev/stageB/engine/trades.c dev/stageB/engine/vwap.c $COMMON"
+FX="dev/stageB/stageB_fixed.c dev/stageB/engine/trades_fx.c dev/stageB/engine/vwap_fx.c \
+    dev/stageB/engine/signal_fx.c $COMMON"
 
 # 1) Compile all eight builds
 build() {
     out=$1; shift
-    gcc -O2 -Wall "$@" -o "stageB/$out" || { echo "build of $out failed"; exit 1; }
+    gcc -O2 -Wall "$@" -o "dev/stageB/$out" || { echo "build of $out failed"; exit 1; }
 }
 echo "Compiling 8 builds..."
-build stageB_inmem      $IM stageB/engine/sma.c    stageB/engine/ohlc.c
-build stageB_inmem_sma  $IM assembly/sma.s         stageB/engine/ohlc.c
-build stageB_inmem_ohlc $IM stageB/engine/sma.c    assembly/ohlc.s
+build stageB_inmem      $IM dev/stageB/engine/sma.c    dev/stageB/engine/ohlc.c
+build stageB_inmem_sma  $IM assembly/sma.s         dev/stageB/engine/ohlc.c
+build stageB_inmem_ohlc $IM dev/stageB/engine/sma.c    assembly/ohlc.s
 build stageB_inmem_asm  $IM assembly/sma.s         assembly/ohlc.s
-build stageB_fixed      $FX stageB/engine/sma_fx.c stageB/engine/ohlc_fx.c
-build stageB_fixed_sma  $FX assembly/sma_fx.s      stageB/engine/ohlc_fx.c
-build stageB_fixed_ohlc $FX stageB/engine/sma_fx.c assembly/ohlc_fx.s
+build stageB_fixed      $FX dev/stageB/engine/sma_fx.c dev/stageB/engine/ohlc_fx.c
+build stageB_fixed_sma  $FX assembly/sma_fx.s      dev/stageB/engine/ohlc_fx.c
+build stageB_fixed_ohlc $FX dev/stageB/engine/sma_fx.c assembly/ohlc_fx.s
 build stageB_fixed_asm  $FX assembly/sma_fx.s      assembly/ohlc_fx.s
 
 # 2) Check each assembly build prints exactly what the pure-C build of the
@@ -54,9 +54,9 @@ build stageB_fixed_asm  $FX assembly/sma_fx.s      assembly/ohlc_fx.s
 #    counts on purpose (fixed-point is exact, double has rounding).
 check() {
     ref=$1; shift
-    ./stageB/$ref | grep -v "time:" > /tmp/ref_$ref.txt
+    ./dev/stageB/$ref | grep -v "time:" > /tmp/ref_$ref.txt
     for p in "$@"; do
-        if ./stageB/$p | grep -v "time:" | diff -q /tmp/ref_$ref.txt - > /dev/null; then
+        if ./dev/stageB/$p | grep -v "time:" | diff -q /tmp/ref_$ref.txt - > /dev/null; then
             echo "  $p: IDENTICAL to $ref"
         else
             echo "  $p: DIFFERENT from $ref - stopping"
@@ -78,7 +78,7 @@ for prog in $PROGS; do : > /tmp/times_$prog.txt; done
 for i in $(seq "$RUNS"); do
     echo "  round $i of $RUNS"
     for prog in $PROGS; do
-        $PIN ./stageB/$prog >> /tmp/times_$prog.txt
+        $PIN ./dev/stageB/$prog >> /tmp/times_$prog.txt
     done
 done
 

@@ -1,7 +1,7 @@
 /*
  * v1-v2_main_stageAplus.c - V1, V2: Stage A+ engine driven by our own reader (Jaren)
  *
- * From stageA_plus/stageA_plus.c. Same engine as V0 (naive SMA), but each
+ * From dev/stageA_plus/stageA_plus.c. Same engine as V0 (naive SMA), but each
  * trade comes from our own read_trade() through pointer parameters instead
  * of the helper library. One source file, two versions, picked at link time:
  *   V1: link reader/v1_read_trade_sscanf.c  (fgets + sscanf)

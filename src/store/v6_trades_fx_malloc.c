@@ -1,7 +1,7 @@
 /*
  * v6_trades_fx_malloc.c - fixed-point trades in a malloc'd array (Leroi, V6)
  *
- * Leroi's Stage C loader (stageC/engine/trades_malloc.c) with the TradeFx
+ * Leroi's Stage C loader (dev/stageC/engine/trades_malloc.c) with the TradeFx
  * struct from V5, so the only difference between V5 and V6 is WHERE the
  * array lives, not what is in it:
  *   1) count the lines in the file

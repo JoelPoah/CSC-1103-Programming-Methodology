@@ -1,7 +1,7 @@
 /*
  * v7-v8_trades_fx_fread.c - fixed-point trades, the whole file read with ONE fread (Lucas, V7, V8)
  *
- * Lucas's Stage C loader (stageC/engine/feed.c) behind the same
+ * Lucas's Stage C loader (dev/stageC/engine/feed.c) behind the same
  * load_trades_fx() interface as V5 and V6, so the main program, the parser
  * and the engine do not change. Only HOW the file is read changes:
  *   V6: fgets once per line, and the file is read twice (count, then fill)

@@ -1,7 +1,7 @@
 """
 stageA_Python.py - Stage A in Python, NAIVE SMA (stretch goal: C versus Python)
 
-Does the same job as stageA/stageA_manual.c, our C Version 0:
+Does the same job as dev/stageA/stageA_manual.c, our C Version 0:
     1) running VWAP                (engine/vwap.py)
     2) one-second OHLC bars        (engine/ohlc.py)
     3) short and long SMA, NAIVE   (engine/sma.py - re-adds the whole window every trade)

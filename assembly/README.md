@@ -5,10 +5,10 @@ engine files:
 
 | Assembly file | Replaces                    | Functions |
 |---------------|-----------------------------|-----------|
-| `sma_fx.s`    | `stageB/engine/sma_fx.c`    | `sma_fx_init`, `sma_fx_push`, `sma_fx_ready`, `sma_fx_sum`, `sma_fx_value` |
-| `ohlc_fx.s`   | `stageB/engine/ohlc_fx.c`   | `ohlc_fx_init`, `ohlc_fx_update` |
-| `sma.s`       | `stageB/engine/sma.c`       | `sma_init`, `sma_push`, `sma_ready`, `sma_value` (double prices, for `stageB_inmem`) |
-| `ohlc.s`      | `stageB/engine/ohlc.c`      | `ohlc_init`, `ohlc_update` (double prices, for `stageB_inmem`) |
+| `sma_fx.s`    | `dev/stageB/engine/sma_fx.c`    | `sma_fx_init`, `sma_fx_push`, `sma_fx_ready`, `sma_fx_sum`, `sma_fx_value` |
+| `ohlc_fx.s`   | `dev/stageB/engine/ohlc_fx.c`   | `ohlc_fx_init`, `ohlc_fx_update` |
+| `sma.s`       | `dev/stageB/engine/sma.c`       | `sma_init`, `sma_push`, `sma_ready`, `sma_value` (double prices, for `stageB_inmem`) |
+| `ohlc.s`      | `dev/stageB/engine/ohlc.c`      | `ohlc_init`, `ohlc_update` (double prices, for `stageB_inmem`) |
 
 `sma.s` / `ohlc.s` use the same techniques as the `_fx` files, but with
 floating-point registers (`d0`…) and `fcsel` instead of `csel`. Time them
@@ -17,7 +17,7 @@ against `stageB_inmem` with `bash assembly/compare_inmem.sh`.
 Line-by-line walkthroughs of each file: [`sma_fx.md`](sma_fx.md) and
 [`ohlc_fx.md`](ohlc_fx.md).
 
-**The experiment:** `stageB/stageB_fixed.c` is not changed at all. The `.s`
+**The experiment:** `dev/stageB/stageB_fixed.c` is not changed at all. The `.s`
 files keep the same function names, arguments and struct layouts as the C
 files, so the only difference between builds is which file gets linked. Any
 speed difference therefore comes from the assembly itself, not from changes
@@ -382,10 +382,10 @@ Compare `dev_1M` (and `stress_full` once that file is in
 ## Building by hand
 
 ```bash
-gcc -O2 -Wall stageB/stageB_fixed.c stageB/engine/trades_fx.c \
-    stageB/engine/vwap_fx.c assembly/ohlc_fx.s assembly/sma_fx.s \
-    stageB/engine/signal_fx.c stageB/engine/signal.c stageB/engine/report.c \
-    helper_function/trade_io.c -o stageB/stageB_fixed_asm
+gcc -O2 -Wall dev/stageB/stageB_fixed.c dev/stageB/engine/trades_fx.c \
+    dev/stageB/engine/vwap_fx.c assembly/ohlc_fx.s assembly/sma_fx.s \
+    dev/stageB/engine/signal_fx.c dev/stageB/engine/signal.c dev/stageB/engine/report.c \
+    helper_function/trade_io.c -o dev/stageB/stageB_fixed_asm
 ```
 
 Link each engine file from **either** the `.c` **or** the `.s` file, never

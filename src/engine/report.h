@@ -4,7 +4,7 @@
  * Keeping output here means the calculation files never call printf.
  * Column layout must match data/group_data/test20_expected.txt.
  * No plot files: the versions in src/ are timed, and the brief says a timed
- * version must never write signals.dat. The plot is made by stageA/stageA_plot.c.
+ * version must never write signals.dat. The plot is made by dev/stageA/stageA_plot.c.
  */
 #ifndef REPORT_H
 #define REPORT_H

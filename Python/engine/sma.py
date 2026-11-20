@@ -5,7 +5,7 @@ The last N prices sit in a list that is used as a circular buffer: the newest
 price overwrites the oldest one. value() then adds up ALL N prices again on
 every trade, so each trade costs N additions. That is the slow part on
 purpose - this is Version 0, the baseline the C running-sum rung
-(stageA/stageA_running_sma.c) gets compared against.
+(dev/stageA/stageA_running_sma.c) gets compared against.
 """
 
 

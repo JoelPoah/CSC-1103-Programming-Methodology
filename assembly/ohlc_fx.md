@@ -1,7 +1,7 @@
 # How `ohlc_fx.s` works
 
 `ohlc_fx.s` is a hand-written AArch64 (64-bit ARM) version of
-`stageB/engine/ohlc_fx.c`. It builds **one-second OHLC bars**: for every
+`dev/stageB/engine/ohlc_fx.c`. It builds **one-second OHLC bars**: for every
 second of trading it records the **O**pen (first price), **H**igh, **L**ow and
 **C**lose (last price), plus the number of trades.
 
