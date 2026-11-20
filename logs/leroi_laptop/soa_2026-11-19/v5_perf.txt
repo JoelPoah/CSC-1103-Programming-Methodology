@@ -1,0 +1,20 @@
+# started on Thu Nov 19 15:00:32 2026
+
+
+ Performance counter stats for 'taskset -c 2 ./bin/v5_stageB_fixed_point':
+
+     1,845,604,134      cpu_atom/cycles/                                                        (0.08%)
+     2,585,504,805      cpu_core/cycles/                                                        (99.92%)
+     1,999,112,322      cpu_atom/instructions/                                                  (0.08%)
+    11,024,452,299      cpu_core/instructions/                                                  (99.92%)
+        45,913,872      cpu_atom/cache-references/                                              (0.08%)
+        25,546,891      cpu_core/cache-references/                                              (99.92%)
+        19,463,382      cpu_atom/cache-misses/                                                  (0.08%)
+        21,674,492      cpu_core/cache-misses/                                                  (99.92%)
+
+       0.563309027 seconds time elapsed
+
+       0.482772000 seconds user
+       0.078760000 seconds sys
+
+

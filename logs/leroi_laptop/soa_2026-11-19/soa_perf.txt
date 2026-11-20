@@ -1,0 +1,20 @@
+# started on Thu Nov 19 15:00:32 2026
+
+
+ Performance counter stats for 'taskset -c 2 ./bin/soa_stageB_fixed':
+
+     1,918,067,750      cpu_atom/cycles/                                                        (0.08%)
+     2,552,554,981      cpu_core/cycles/                                                        (99.92%)
+     1,953,715,953      cpu_atom/instructions/                                                  (0.08%)
+    11,083,469,904      cpu_core/instructions/                                                  (99.92%)
+        67,712,380      cpu_atom/cache-references/                                              (0.08%)
+        24,186,207      cpu_core/cache-references/                                              (99.92%)
+        41,464,741      cpu_atom/cache-misses/                                                  (0.08%)
+        19,914,675      cpu_core/cache-misses/                                                  (99.92%)
+
+       0.556999882 seconds time elapsed
+
+       0.476720000 seconds user
+       0.078850000 seconds sys
+
+
