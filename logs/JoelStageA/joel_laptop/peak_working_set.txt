@@ -1,4 +1,0 @@
-benchmark/results/joel/laptop/ladder/logs/v0_stageA_naive_sma_O0.txt:  Peak memory: 4.3 MB (peak working set, one extra untimed run after the timed runs)
-benchmark/results/joel/laptop/ladder/logs/v0_stageA_naive_sma_O1.txt:  Peak memory: 4.3 MB (peak working set, one extra untimed run after the timed runs)
-benchmark/results/joel/laptop/ladder/logs/v0_stageA_naive_sma_O2.txt:  Peak memory: 4.3 MB (peak working set, one extra untimed run after the timed runs)
-benchmark/results/joel/laptop/ladder/logs/v0_stageA_naive_sma_O3.txt:  Peak memory: 4.3 MB (peak working set, one extra untimed run after the timed runs)

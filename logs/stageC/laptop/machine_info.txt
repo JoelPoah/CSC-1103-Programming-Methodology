@@ -1,9 +1,0 @@
-date: 2026-11-19T14:12:42+08:00
-machine: unknown
-model name	: Intel(R) Core(TM) i7-10510U CPU @ 1.80GHz
-cores: 8
-OS: WSL2 6.18.58.1-microsoft-standard-WSL2, Ubuntu 24.04.5 LTS
-gcc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0
-flags: -O2 -Wall (make stageC)
-governor: not exposed in WSL (Windows controls power)
-pinning: taskset -c 2
