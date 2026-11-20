@@ -1,9 +1,5 @@
 // v8_sma_fx.s - AArch64 (64-bit ARM) version of engine_fx/sma_fx.c (Yong Sheng, V8)
 //
-// Running-sum simple moving average with fixed-point prices.
-// Drop-in replacement for sma_fx.c: same function names, same SmaFx layout,
-// so the rest of the C program can link against it unchanged.
-//
 // Build:  gcc -c sma_fx.s -o sma_fx.o      (on a 64-bit Raspberry Pi OS)
 //
 // Calling convention (AAPCS64):
@@ -13,8 +9,6 @@
 //   x19-x28 callee-saved (must be restored before returning)
 //   x29/x30 frame pointer / link register (return address)
 //
-// Performance notes (the first version, without these, ran ~9% slower than
-// the C build on the Pi):
 //   - Fields are read straight from the struct pointer, e.g. [x0, #1032].
 //     An earlier version first did "add x9, x0, #1024" and read [x9, #8];
 //     that extra add delays every load by a cycle, in all six calls per trade.
@@ -23,12 +17,10 @@
 //   - Each function starts on a 16-byte boundary (.p2align 4), like GCC does.
 
 // ---------------------------------------------------------------------------
-// Constants. THESE TWO MUST MATCH YOUR HEADERS:
-//   MAX_WIN     from sma.h
-//   PRICE_SCALE from fixed.h
+// Constants.
 // ---------------------------------------------------------------------------
-        .equ    MAX_WIN,     128            // <-- change to match sma.h
-        .equ    PRICE_SCALE, 100            // <-- change to match fixed.h
+        .equ    MAX_WIN,     128            
+        .equ    PRICE_SCALE, 100            
 
 // SmaFx layout (byte offsets from the start of the struct):
 //   long long win[MAX_WIN]   0
@@ -79,7 +71,8 @@ sma_fx_init:
 
 .Linit_bad:
         adrp    x0, msg_fail                // x0 = address of the message
-        add     x0, x0, :lo12:msg_fail
+                                            // 4KB page containing msg_fail
+        add     x0, x0, :lo12:msg_fail      // x0 = exact address of msg_fail
         bl      printf
         mov     w10, #1
         str     w10, [x19, #O_WINDOW]       // s->window = 1 (safe value)
@@ -100,7 +93,7 @@ sma_fx_init:
         .type   sma_fx_push, %function
 sma_fx_push:
         ldr     w10, [x0, #O_WINDOW]        // w10 = window
-        ldrsw   x11, [x0, #O_HEAD]          // x11 = head (sign-extended for indexing)
+        ldrsw   x11, [x0, #O_HEAD]          // x11 = head (sign-extended for indexing) (load register signed word)
         ldr     w12, [x0, #O_COUNT]         // w12 = count
         ldr     x13, [x0, #O_SUM]           // x13 = sum
 
@@ -119,6 +112,7 @@ sma_fx_push:
         add     w11, w11, #1                // head + 1
         cmp     w11, w10
         csel    w11, wzr, w11, eq           // w11 = (head + 1 == window) ? 0 : head + 1
+                                            // if w11 is eq = 0, head =0, else head + 1.
         str     w11, [x0, #O_HEAD]
 
         cmp     w12, w10                    // if (count < window)
@@ -169,13 +163,13 @@ sma_fx_value:
         ldr     w11, [x0, #O_WINDOW]
         cmp     w10, w11                    // ready?
         b.eq    1f
-        fmov    d0, xzr                     // return 0.0
+        fmov    d0, xzr                     // return 0.0  (floating-point move)
         ret
 1:
         ldr     x12, [x0, #O_SUM]
-        scvtf   d0, x12                     // d0 = (double)sum
+        scvtf   d0, x12                     // d0 = (double)sum convert the signed int to floating point
         scvtf   d1, w11                     // d1 = (double)window
-        fdiv    d0, d0, d1                  // d0 = sum / window
+        fdiv    d0, d0, d1                  // d0 = sum / window  (float-point division)
         mov     x13, #PRICE_SCALE
         scvtf   d1, x13                     // d1 = (double)PRICE_SCALE
         fdiv    d0, d0, d1                  // d0 = sum / window / PRICE_SCALE

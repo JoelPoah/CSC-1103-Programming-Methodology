@@ -7,7 +7,7 @@ int counter(int n);
 
 int main()
 {
-    led_init();
+    led_init();  //  run in sudo for rpi
     int n = 10000;
     uint64_t start, end, result;
 

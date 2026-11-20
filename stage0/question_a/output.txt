@@ -1,67 +1,127 @@
+METHOD (both machines): N = 100000000, each binary run 5 times, the MEDIAN is reported.
+Speedup = O0 time / Ox time. Raw runs are kept in results_<machine>.dat.
+Charts (run in this folder):
+    gnuplot -e "machine='laptop'" plot_question_a.gnuplot  -> ../question_c/windows_chart_a.png
+    gnuplot -e "machine='pi'"     plot_question_a.gnuplot  -> ../question_c/rpi_chart_a.png
+    gnuplot compare_question_a.gnuplot                     -> ../question_c/compare_chart_a.png (both machines)
+
 LAPTOP:
-    OPTIMISATION LEVELS (WINDOWS, gcc, N = 100000000, fastest of 3 runs):
-    Speedup = O0 time / Ox time
+    OPTIMISATION LEVELS (Intel Core Ultra 7 258V, Windows 11, gcc 15.2.0 (MSYS2),
+    N = 100000000, median of 5 runs, pinned to performance core CPU 4, high priority):
+    Run as: echo 100000000 | cmd /c "start /b /wait /high /affinity 10 a_loop_sum_O0.exe"
 
     a_loop_sum.c (N entered by user)
     Flag   Time (ns)     Speedup
-    -O0    75832100      1.00x
-    -O1    47173500      1.61x
-    -O2    41618800      1.82x
-    -O3    37401600      2.03x
+    -O0    45532500      1.00x
+    -O1    27244000      1.67x
+    -O2    27195300      1.67x
+    -O3    27299400      1.67x
 
     a_loop_sum_fixed.c (N fixed in program)
     Flag   Time (ns)     Speedup
-    -O0    75564700      1.00x
-    -O1    48163800      1.57x
-    -O2    < 100         loop removed
-    -O3    < 100         loop removed
+    -O0    45426000      1.00x
+    -O1    27322700      1.66x
+    -O2    0             loop removed (runs: 0-100 ns, the timer's smallest step is 100 ns)
+    -O3    0             loop removed
+
+    Why pin to one core: the 258V has 4 performance cores (CPU 4-7) and 4 low-power
+    cores (CPU 0-3). Unpinned, Windows moved the program between them and -O0 times
+    ranged from 76 ms to 257 ms. Pinned to CPU 4, all 5 runs are within 1% of each other.
+    (Test at -O0: CPU 0-3 took 154-178 ms, CPU 4-7 took 45.4-45.5 ms.)
+    The earlier unpinned laptop results (75.8 ms at -O0) are replaced by these.
 
 RPI:
-    OPTIMISATION LEVELS (RASPBERRY PI, gcc, N = 100000000, fastest of 3 runs):
-    Speedup = O0 time / Ox time
+    OPTIMISATION LEVELS (Raspberry Pi 5, Raspberry Pi OS 64-bit, gcc, N = 100000000,
+    median of 5 runs, run with sudo, pinned with taskset -c 2, CPU governor = performance):
+    Run as: echo 100000000 | sudo taskset -c 2 ./a_loop_sum_O0
 
     a_loop_sum.c (N entered by user)
     Flag   Time (ns)     Speedup
-    -O0    2821988846    1.00x
-    -O1    857180637     3.29x
-    -O2    450005649     6.27x
-    -O3    450788255     6.26x
+    -O0    278309743     1.00x
+    -O1    41696634      6.67x
+    -O2    41709172      6.67x
+    -O3    41762129      6.66x
 
     a_loop_sum_fixed.c (N fixed in program)
     Flag   Time (ns)     Speedup
-    -O0    278175162     1.00x
-    -O1    41697708      6.67x
-    -O2    < 100         loop removed
-    -O3    < 100         loop removed
+    -O0    278427567     1.00x
+    -O1    41692830      6.68x
+    -O2    55            loop removed (only the cost of reading the clock: 3 timer steps of ~18.5 ns)
+    -O3    56            loop removed
+
+    All 5 runs of every binary are within about 1% of each other.
 
 
 Prediction 1: Higher optimisation level = faster
 
 Expected: both programs would run faster as the optimisation level goes up from O0 to O3.
 
-Result: The prediction mostly held. The user-input version got faster at every level up to O2
-(Laptop 1.00x -> 1.82x, Pi 1.00x -> 6.27x). O3 gave little or no extra gain over O2
-(Laptop 2.03x, Pi 6.26x). The fixed version went from about 75 ms (Laptop) / 278 ms (Pi)
-at O0 to under 100 ns at O2 and O3.
+Result: Only partly true. Both programs got much faster from O0 to O1 (Laptop 1.67x,
+Pi 6.67x), but O2 and O3 gave no extra gain over O1 for the user-input version on either
+machine (Laptop all 1.67x, Pi all 6.66-6.67x). The fixed version went from about 45 ms
+(Laptop) / 278 ms (Pi) at O0 to under 100 ns at O2 and O3.
 
 Reason: At O0 the compiler does almost no optimisation, so it reads and writes i and total
-to memory on every loop. From O1 it keeps them in CPU registers and makes the loop
-simpler, which saves a lot of time. O3's extra optimisations don't help much on a loop this simple.
+to memory on every loop. From O1 it keeps them in CPU registers, which saves a lot of time.
+O2 and O3 produce the same machine code for this loop (checked with gcc -S on the Laptop:
+both unroll it 2 times and neither uses SIMD), so they cannot be different. O1 is already as
+fast because each "total += i" has to wait for the previous addition to finish. That chain of
+additions sets the speed, and unrolling does not shorten it.
+The Pi shows this clearly: at O1 it takes 41.7 ms / 100,000,000 = 0.417 ns per number. At the
+Pi 5's 2.4 GHz clock that is exactly 1.0 clock cycle per addition, the fastest a chain of
+dependent additions can go.
+gcc probably does not use SIMD because with "i <= n" the loop would never end if n were the
+largest uint64_t value, so it cannot work out in advance how many times the loop runs.
+This is likely, not confirmed.
 
 
 Prediction 2: Fixed N would be faster than N entered by the user
 
 Expected: the fixed version would be faster, because the compiler already knows the value of N.
 
-Result: The prediction held at O2 and O3. The fixed version took under 100 ns, while the
-user-input version still took about 42 ms (Laptop) and 450 ms (Pi). At O0 and O1 the two
-versions were about the same speed on the Laptop.
+Result: The prediction held at O2 and O3 only. The fixed version took under 100 ns, while the
+user-input version still took about 27 ms (Laptop) and 42 ms (Pi). At O0 and O1 the two
+versions took the same time on both machines (Laptop 45.5 vs 45.4 ms, 27.2 vs 27.3 ms;
+Pi 278.3 vs 278.4 ms, 41.7 vs 41.7 ms).
 
 Reason: When N is fixed, the compiler can work out the whole sum before the program runs
 and just print the answer (5000000050000000 appears as a constant in the O2 assembly), so
 the loop is removed. When N is entered by the user, the value is only known at runtime,
-so the loop still has to run.
+so the loop still has to run. At O0 the compiler does not do this, so both versions run
+the same loop.
+At O1 it is more surprising: the compiler already works out the answer, but leaves an
+empty loop behind (checked with gcc -O1 -S on the Laptop):
+        movl $100000000, %eax
+    .L5: subq $1, %rax                      // count down from 100,000,000
+         jne  .L5                           // until 0, no additions
+         movabsq $5000000050000000, %rdx    // the answer, worked out by the compiler
+So at O1 the fixed version does no additions at all, yet it takes the same time as the
+user-input version, which adds every number. Both loops are limited to one pass per clock
+cycle (Pi: 41.7 ms / 100,000,000 = 0.417 ns = 1 cycle at 2.4 GHz), so removing the
+addition does not make the loop any faster. Only -O2, which also deletes the empty loop,
+makes the fixed version fast. The Pi -O1 build was not checked with gcc -S for this
+program, but question b's Pi assembly (b_O1.s) shows the Pi's gcc does the same thing.
 
-Note: On the Pi, the user-input version at O0 (about 2.82 s) was about 10x slower than the
-fixed version at O0 (about 278 ms), even though both run the same loop. This was repeated
-twice with the same result. The cause has not been confirmed yet.
+Note: An earlier Pi run (fastest of 3, not pinned) gave 2.82 s for the user-input version at
+O0, 10x slower than the fixed version. With the method above this did not happen again:
+both versions take 278 ms. The old result is exactly 10x the new one, which fits N being
+typed as 1,000,000,000 by mistake, but the old sum was not saved, so this is not confirmed.
+
+
+Laptop vs Pi (-O0 and -O2, user-input version):
+
+    Flag   Laptop      Pi           Laptop faster by
+    -O0    45.5 ms     278.3 ms     6.1x
+    -O2    27.2 ms     41.7 ms      1.53x
+
+At -O2 both machines are limited by the same thing: one dependent addition after another.
+So the gap is mostly clock speed. The Pi runs at 2.4 GHz. If the laptop also does one
+addition per cycle, 27.2 ms means it runs at about 3.7 GHz (2.4 x 1.53). That is
+within the 258V's boost range, but the laptop's actual clock was not measured.
+
+At -O0 the gap grows to 6.1x. Every loop stores total and i to memory and loads them back
+straight away. Per number, the Pi takes 2.78 ns = about 6.7 cycles at 2.4 GHz. The laptop
+takes 0.455 ns, about 1.7 cycles if it runs at ~3.7 GHz. So the laptop's core gets a value it
+has just stored back to the next instruction much faster than the Pi's Cortex-A76 does. This
+is the likely reason, from the cycle counts above. It was not measured directly (perf is
+only available on the Pi).
