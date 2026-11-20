@@ -41,6 +41,10 @@
  *                     the colour of the latest signal
  *     --signals       print every signal
  *     --quiet         print only the summary (no signal or status lines)
+ *     --percentiles   also keep every processing time and latency in two malloc'd
+ *                     arrays (16 bytes per trade), sort them after the replay with
+ *                     quick_sort (engine/percentile.c) and print p50 and p99.
+ *                     Off by default, so the default timings stay comparable.
  *
  * Examples (from the project root):
  *   test20 check:   ./stageC/stageC_replay data/group_data/test20.csv --short 3 --long 5 --speed 0 --signals --engine v0
@@ -67,6 +71,7 @@
 #include "engine/stream_engine.h"        /* Version 0 (ladder V0) */
 #include "engine/fixed_engine.h"         /* fastest version (ladder V7) */
 #include "engine/rival.h"                /* the rival bot                     */
+#include "engine/percentile.h"           /* quick_sort, percentile (p50 / p99) */
 
 /* ---- the two engines ---- */
 #define ENGINE_V0  0
@@ -103,6 +108,7 @@ int    opt_led_every = 0;        /* > 0 = flash on every Nth BUY / SELL */
 int    opt_signals = -1;         /* 1 = print signals, -1 = decide later */
 int    opt_quiet = 0;            /* 1 = summary only                    */
 int    opt_feed = 0;             /* > 0 = live feed with this many samples */
+int    opt_pct = 0;              /* 1 = keep every time, report p50 / p99 */
 
 /* colour the LED is showing now (SIG_NONE = off) */
 int led_colour = SIG_NONE;
@@ -117,6 +123,7 @@ void print_usage(char *program) {
     printf("usage: %s <file.csv> [--engine v0|mem] [--speed X] [--minutes M]\n", program);
     printf("          [--from-min M] [--short S] [--long L] [--rival R_us]\n");
     printf("          [--led | --led-gpio] [--led-every N] [--signals | --quiet] [--feed N]\n");
+    printf("          [--percentiles]\n");
 }
 
 /* read_options
@@ -139,6 +146,8 @@ int read_options(int argc, char *argv[]) {
         } else if (strcmp(argv[i], "--quiet") == 0) {
             opt_signals = 0;
             opt_quiet = 1;
+        } else if (strcmp(argv[i], "--percentiles") == 0) {
+            opt_pct = 1;
         } else if (argv[i][0] != '-' && opt_path == NULL) {
             opt_path = argv[i];
         } else if (i + 1 < argc) {
@@ -393,6 +402,9 @@ int main(int argc, char *argv[]) {
     char *name;
     Rival rival;                       /* reaction = latency (release -> decision) */
     Rival rival_proc;                  /* reaction = processing time (the brief)   */
+    long long *proc_list = NULL;       /* --percentiles: every processing time, ns */
+    long long *lat_list = NULL;        /* --percentiles: every latency, ns         */
+    long long sort_start, sort_ns;     /* how long the two sorts took              */
 
     if (!read_options(argc, argv)) {
         print_usage(argv[0]);
@@ -472,6 +484,19 @@ int main(int argc, char *argv[]) {
         fflush(stdout);
     }
 
+    /* --percentiles: room for one processing time and one latency per trade */
+    if (opt_pct) {
+        proc_list = malloc((last - first) * sizeof(long long));
+        lat_list = malloc((last - first) * sizeof(long long));
+        if (proc_list == NULL || lat_list == NULL) {
+            printf("not enough memory for --percentiles\n");
+            free(proc_list);
+            free(lat_list);
+            free_trades_fx(list);
+            return 1;
+        }
+    }
+
     /* ---- 4) REPLAY ---- */
     start = now_ns();
     if (opt_speed > 0) {
@@ -515,6 +540,10 @@ int main(int argc, char *argv[]) {
         }
         if (lag_ns > max_lag_ns) {
             max_lag_ns = lag_ns;
+        }
+        if (opt_pct) {
+            proc_list[done] = proc_ns;
+            lat_list[done] = lat_ns;
         }
 
         /* d) the rival bot: first fill an order lost on the previous signal
@@ -603,6 +632,22 @@ int main(int argc, char *argv[]) {
     printf("latency (release->decision)\n");
     printf("                  avg %.1f ns   worst %lld ns\n", lat_total / done, lat_worst);
     printf("max lag behind replay clock  %.3f ms\n", (double)max_lag_ns / NS_PER_MS);
+
+    /* --percentiles: sort both lists (after the replay, so not timed as latency) */
+    if (opt_pct) {
+        sort_start = now_ns();
+        quick_sort(proc_list, 0, done - 1);
+        quick_sort(lat_list, 0, done - 1);
+        sort_ns = now_ns() - sort_start;
+        printf("percentiles       processing p50 %lld ns   p99 %lld ns\n",
+               percentile(proc_list, done, 50), percentile(proc_list, done, 99));
+        printf("                  latency    p50 %lld ns   p99 %lld ns\n",
+               percentile(lat_list, done, 50), percentile(lat_list, done, 99));
+        printf("                  (2 x %lld values sorted in %.1f ms, middle-pivot quicksort)\n",
+               done, sort_ns / 1e6);
+        free(proc_list);
+        free(lat_list);
+    }
     printf("rival bot (R=%g us)", opt_rival_us);
     if (rival.holding) {
         printf("   (1 BTC still held at the end, not counted)");

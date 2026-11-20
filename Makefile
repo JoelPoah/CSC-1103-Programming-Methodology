@@ -83,10 +83,11 @@ STAGEC_REPLAY_MALLOC = stageC/stageC_replay_malloc$(EXE)
 STAGEC_RIVAL_MALLOC  = stageC/stageC_rival_malloc$(EXE)
 STAGEC_REPLAY_ASM   = stageC/stageC_replay_asm$(EXE)
 STAGEC_RIVAL_ASM    = stageC/stageC_rival_asm$(EXE)
-STAGEC = $(STAGEC_MALLOC) $(STAGEC_REPLAY) $(STAGEC_RIVAL) $(STAGEC_REPLAY_MALLOC) $(STAGEC_RIVAL_MALLOC)
+STAGEC_TEST_SORT    = stageC/test_sort$(EXE)
+STAGEC = $(STAGEC_MALLOC) $(STAGEC_REPLAY) $(STAGEC_RIVAL) $(STAGEC_REPLAY_MALLOC) $(STAGEC_RIVAL_MALLOC) $(STAGEC_TEST_SORT)
 
 ENGINE_C_V0   = stageC/engine/vwap.c stageC/engine/ohlc.c stageC/engine/sma.c stageC/engine/sma_naive.c stageC/engine/signal.c helper_function/trade_io.c
-ENGINE_C_CORE = stageC/engine/stream_engine.c stageC/engine/fixed_engine.c stageC/engine/rival.c $(ENGINE_C_V0) stageC/engine/read_trade_fx.c stageC/engine/vwap_fx.c stageC/engine/sma_fx.c stageC/engine/signal_fx.c
+ENGINE_C_CORE = stageC/engine/stream_engine.c stageC/engine/fixed_engine.c stageC/engine/rival.c $(ENGINE_C_V0) stageC/engine/read_trade_fx.c stageC/engine/vwap_fx.c stageC/engine/sma_fx.c stageC/engine/signal_fx.c stageC/engine/percentile.c
 ENGINE_C        = $(ENGINE_C_CORE) stageC/engine/trades_fx_fread.c stageC/engine/ohlc_fx.c
 ENGINE_C_MALLOC = $(ENGINE_C_CORE) stageC/engine/trades_fx_malloc.c stageC/engine/ohlc_fx.c
 ENGINE_C_ASM    = $(ENGINE_C_CORE) stageC/engine/trades_fx_fread.c stageC/engine/ohlc_fx.s
@@ -295,3 +296,7 @@ ifeq ($(OS),Windows_NT)
 else
 	-$(RM) $(ALL_EXES)
 endif
+
+# p50 / p99 stretch goal: checks and times the middle-pivot quicksort against qsort
+$(STAGEC_TEST_SORT): stageC/test_sort.c stageC/engine/percentile.c stageC/engine/percentile.h
+	$(CC) $(CFLAGS_C) stageC/test_sort.c stageC/engine/percentile.c -o $@

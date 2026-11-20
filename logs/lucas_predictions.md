@@ -96,3 +96,57 @@ starts winning when R grows past that version's processing time.
 **Result:** v0 starts winning at R ≈ 1.26 µs (0 % at 1.00 µs, 97.3–97.6 % at 1.259 µs); mem at R ≈ ≤ 0.1 µs (99.6–99.8 % already at the smallest R tested, 100 % from 0.251 µs) (from `rival_sweep.png`).
 
 **Explain the difference:** ____
+
+---
+
+## Prediction 4: Replay on my laptop (WSL) compared with the Pi 5
+
+**Date:** 2026-11-19  **Signed:** Lucas
+**Status:** written before any laptop replay run (5 runs each, v0 and mem, at 1×, 100×
+and 1000×, `taskset -c 2` in WSL Ubuntu 24.04).
+
+**Already known beforehand:**
+- Pi 5 at 1000× (median of 5): v0 takes 1.19 µs per trade (avg latency 220 µs, worst
+  9.6 ms); mem takes 0.05 µs per trade (worst 0.35 ms).
+- Time available per trade: about 9.7 µs at 1000×, 97 µs at 100×, 9.7 ms at 1×.
+- WSL uses the Linux (glibc) `sscanf`, the same as the Pi, not the slower MinGW one.
+
+**Expected:**
+
+| | Prediction |
+|---|---|
+| v0 time per trade (laptop) | **faster** than the Pi, by about **0.5 µs** (so about **0.7 µs**) |
+| mem time per trade (laptop) | **faster** than the Pi |
+| v0 keeps up at 1× / 100× / 1000×? | **Yes / Yes / Yes** on average |
+| mem keeps up at 1× / 100× / 1000×? | **Yes / Yes / Yes** |
+| Worst-case latency vs the Pi | **bigger** |
+| P&L | **changes** between speeds and between laptop and Pi |
+
+*Reason:*
+- **Speed.** My laptop's CPU is faster than the Pi's, and both now use the same Linux
+  `sscanf`, so both engines should process each trade faster on the laptop.
+- **Keeping up.** About 0.7 µs per trade is well below the time available at every speed
+  (9.7 ms at 1×, 97 µs at 100×, 9.7 µs at 1000×), so v0 should keep up on average at all
+  three. Like on the Pi, it may still fall slightly behind during bursts at 1000×.
+- **Worst case.** WSL runs inside Windows, so Windows can interrupt it at any time. This
+  affects both the average and the worst case, but a single long interruption shows up
+  much more in the worst case.
+- **P&L.** At higher speeds more trades arrive in a shorter time, so I expect the results,
+  and therefore the P&L, to differ between speeds and between machines.
+
+**Result:** (laptop, WSL2, median of 5 runs, `taskset -c 2`; full table in
+`logs/stageC/laptop/RESULTS_SUMMARY_laptop.md`)
+
+| Engine | Speed | processing avg | avg latency | worst latency | max lag | P&L, reaction = latency (USDT) |
+|---|---|---|---|---|---|---|
+| v0  | 1×    | 4.31 µs (4313.0 ns) | 68.42 µs  | 4.606 ms  | 4.604 ms  | +1,099.13 |
+| v0  | 100×  | 1.33 µs (1330.7 ns) | 56.29 µs  | 68.093 ms | 68.079 ms | +207,381.13 |
+| v0  | 1000× | 1.16 µs (1156.7 ns) | 207.02 µs | 54.457 ms | 54.444 ms | +207,375.28 |
+| mem | 1×    | 0.24 µs (239.3 ns)  | 8.21 µs   | 4.728 ms  | 4.728 ms  | +1,099.18 |
+| mem | 100×  | 0.055 µs (55.1 ns)  | 8.75 µs   | 48.175 ms | 48.175 ms | +207,805.38 |
+| mem | 1000× | 0.041 µs (41.4 ns)  | 18.52 µs  | 43.145 ms | 43.144 ms | +207,812.98 |
+
+Every run gave the same signals at a given speed (full day: v0 20386 / 20176, mem
+20943 / 20060).
+
+**Explain the difference:** ____

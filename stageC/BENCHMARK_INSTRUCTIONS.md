@@ -123,7 +123,8 @@ command timeout.
    (`cat /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor`).
 4. For each engine and speed, the **median of the 5 runs** of: average latency, worst-case
    latency, maximum lag and P&L. These are in the summary at the end of each log.
-   (p50 / p99 are no longer reported: they are an optional stretch goal and need sorting.)
+   (p50 / p99 are an optional stretch goal: add `--percentiles` to get them. The runs
+   above leave it off, so they stay comparable with the earlier logs.)
 5. From the rival logs: P&L for each version and the money lost at R = 1 µs.
 
 ## On the Raspberry Pi (CSC1104 runs)
