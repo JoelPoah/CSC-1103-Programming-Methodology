@@ -1,5 +1,0 @@
-date: 2026-11-19T15:00:25+08:00
-host: artemis x86_64 7.3.4-arch1-2
-gcc: gcc (GCC) 16.2.1 20260810
-governor: 16 performance
-perf_event_paranoid: 1

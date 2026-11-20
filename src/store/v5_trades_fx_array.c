@@ -1,7 +1,7 @@
 /*
  * v5_trades_fx_array.c - fixed-point trades in a fixed-size global array (Leroi, V5)
  *
- * Same as stageB/engine/trades_fx.c, except the line is parsed straight to
+ * Same as dev/stageB/engine/trades_fx.c, except the line is parsed straight to
  * fixed-point by read_trade_fx() (Lucas), so no double is ever created.
  */
 #include <stdio.h>

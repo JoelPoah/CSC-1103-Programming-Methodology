@@ -1,7 +1,7 @@
 # How `sma_fx.s` works
 
 `sma_fx.s` is a hand-written AArch64 (64-bit ARM) version of
-`stageB/engine/sma_fx.c`. It computes a **simple moving average (SMA)**, the
+`dev/stageB/engine/sma_fx.c`. It computes a **simple moving average (SMA)**, the
 average of the last *N* prices, using fixed-point prices (cents stored as
 `long long`).
 

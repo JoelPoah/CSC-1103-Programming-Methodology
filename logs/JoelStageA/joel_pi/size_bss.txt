@@ -1,5 +1,0 @@
-# Command (run on the Pi from the project root, after make ladder):
-# size bin/v0_stageA_naive_sma > logs/JoelStageA/joel_pi/size_bss.txt
-
-   text	   data	    bss	    dec	    hex	filename
-   9346	    720	   2312	  12378	   305a	bin/v0_stageA_naive_sma

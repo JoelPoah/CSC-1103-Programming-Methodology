@@ -1,7 +1,7 @@
 /*
  * v5-v8_main_stageB_fixed.c - V5 to V8: in-memory engine with FIXED-POINT prices (Leroi)
  *
- * From stageB/stageB_fixed.c. Same steps as V4 (load the file into an array,
+ * From dev/stageB/stageB_fixed.c. Same steps as V4 (load the file into an array,
  * then process the array with a running-sum SMA), but every price and
  * quantity is a long long whole number instead of a double:
  *   price -> cents (x 100), qty -> x 100000   (see engine_fx/fixed.h)

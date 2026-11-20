@@ -1,7 +1,7 @@
 """
 settings.py - all the numbers and paths you might want to change
 
-Paths are RELATIVE to the project root (the folder that has data/, stageA/,
+Paths are RELATIVE to the project root (the folder that has data/, dev/stageA/,
 Python/ ...). stageA_Python.py moves into the project root before it starts,
 so they work no matter which folder you run it from.
 
@@ -46,7 +46,7 @@ PLOT_DPI = 100
 MARKER_SIZE = 80           # EDIT: size of the BUY / SELL triangles
 LEGEND_PLACE = "best"      # EDIT: "best", "upper left", "lower right" ...
 
-# same colours as stageA/plot_signals.gnuplot
+# same colours as dev/stageA/plot_signals.gnuplot
 PRICE_COLOUR = "#bbbbbb"
 SHORT_COLOUR = "#1f77b4"
 LONG_COLOUR = "#ff7f0e"

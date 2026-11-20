@@ -1,0 +1,13 @@
+race 10000x run 1 start 2026-11-20T12:44:14+08:00 governor=performance  before: throttled=0x0 temp=49.4'C
+race 10000x run 1 end   2026-11-20T12:44:28+08:00 exit v0=0 mem=0 after: throttled=0x0 temp=54.9'C
+race 10000x run 2 start 2026-11-20T12:44:33+08:00 governor=performance  before: throttled=0x0 temp=51.6'C
+race 10000x run 2 end   2026-11-20T12:44:47+08:00 exit v0=0 mem=0 after: throttled=0x0 temp=55.4'C
+race 10000x run 3 start 2026-11-20T12:44:52+08:00 governor=performance  before: throttled=0x0 temp=53.2'C
+race 10000x run 3 end   2026-11-20T12:45:06+08:00 exit v0=0 mem=0 after: throttled=0x0 temp=57.1'C
+race 5000x run 1 start 2026-11-20T12:45:11+08:00 governor=performance  before: throttled=0x0 temp=54.3'C
+race 5000x run 1 end   2026-11-20T12:45:31+08:00 exit v0=0 mem=0 after: throttled=0x0 temp=57.6'C
+race 5000x run 2 start 2026-11-20T12:45:36+08:00 governor=performance  before: throttled=0x0 temp=54.3'C
+race 5000x run 2 end   2026-11-20T12:45:55+08:00 exit v0=0 mem=0 after: throttled=0x0 temp=58.2'C
+race 5000x run 3 start 2026-11-20T12:46:00+08:00 governor=performance  before: throttled=0x0 temp=55.4'C
+race 5000x run 3 end   2026-11-20T12:46:20+08:00 exit v0=0 mem=0 after: throttled=0x0 temp=59.3'C
+RACESDONE

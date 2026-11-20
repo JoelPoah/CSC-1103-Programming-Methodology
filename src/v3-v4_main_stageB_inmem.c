@@ -1,7 +1,7 @@
 /*
  * v3-v4_main_stageB_inmem.c - V3, V4: Stage B in-memory engine, double prices (Leroi)
  *
- * From stageB/stageB_inmem.c. Same calculations as V2, but in two separate phases:
+ * From dev/stageB/stageB_inmem.c. Same calculations as V2, but in two separate phases:
  *   1) LOAD:    read the whole CSV into the global trades[] array
  *               (store/v3-v4_trades.c, using the V2 reader v2-v4_read_trade_fast.c)
  *   2) PROCESS: loop over the array (no file reading here)

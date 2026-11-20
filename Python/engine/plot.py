@@ -1,5 +1,5 @@
 """
-plot.py - draws signals.png from signals.dat (same job as stageA/plot_signals.gnuplot)
+plot.py - draws signals.png from signals.dat (same job as dev/stageA/plot_signals.gnuplot)
 
 Needs matplotlib:
     Windows:  py -m pip install matplotlib

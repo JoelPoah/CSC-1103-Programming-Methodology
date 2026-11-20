@@ -1,7 +1,7 @@
 /*
  * v0_main_stageA.c - V0: Stage A streaming engine with the helper library (Joel)
  *
- * From stageA/stageA_manual.c. This is the group's VERSION 0: helper
+ * From dev/stageA/stageA_manual.c. This is the group's VERSION 0: helper
  * library (sscanf), double prices and the NAIVE SMA in engine/v0-v3_sma_naive.c
  * (re-adds the whole window every trade).
  * Every ladder speedup, the rival bot and the race compare against it.
@@ -15,7 +15,7 @@
  * benchmark/benchmark.c (now_ns() around the whole program), e.g. on "stress".
  * Because this program is timed, it writes NO signals.dat / signals.png (the
  * brief says never to write plot files in a version you time). The plot is
- * made by stageA/stageA_plot.c.
+ * made by dev/stageA/stageA_plot.c.
  *
  * Build (from the project root):
  *   make ladder

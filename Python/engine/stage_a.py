@@ -1,5 +1,5 @@
 """
-stage_a.py - the Stage A main loop (Python version of run() in stageA/stageA_manual.c)
+stage_a.py - the Stage A main loop (Python version of run() in dev/stageA/stageA_manual.c)
 
 One pass over a trade file, one trade at a time:
     a) read the trade

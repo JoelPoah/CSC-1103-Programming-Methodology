@@ -1,12 +1,14 @@
 # Makefile - builds stage0, stageA, stageC and the src/ ladder (run from the project root)
 #
-#   make            build everything (stage0 + stageA + stageC + ladder)
+#   make            build everything (stage0 + stageA + stageC + ladder + race, + race_gui if GTK3 is installed)
 #   make stage0     build stage0 only (question a + question b)
 #   make stageA     build stageA only (stageA_manual = Version 0, stageA_plot)
-#   make plotA      build stageA_plot and run it (writes stageA/signals.dat + signals.png)
+#   make plotA      build stageA_plot and run it (writes dev/stageA/signals.dat + signals.png)
 #   make stageC     build stageC only (stageC_malloc, stageC_replay/_rival + _malloc, + _asm on the Pi)
-#   make gui        build the GTK3 live replay window stageC/stageC_gui (needs GTK3, not part of 'make')
-#   make asm        write the -O2 assembly of the fixed-point kernels to stageC/asm/
+#   make gui        build the GTK3 live replay window dev/stageC/stageC_gui (needs GTK3, not part of 'make')
+#   make race       build the race demo race_demonstration/stageC_replay (+ _asm on the Pi)
+#   make race_gui   build the race demo and its GTK3 window race_demonstration/stageC_gui (needs GTK3)
+#   make asm        write the -O2 assembly of the fixed-point kernels to dev/stageC/asm/
 #   make ladder     build every version V0-V7 from src/ into bin/ (+ the two V8s on the Pi)
 #   make ladder_asm build only the two assembly versions (Raspberry Pi only):
 #                   v8_stageB_asm_ohlc = V5 + ohlc_fx.s, v8_stageB_asm_sma = V5 + sma_fx.s
@@ -29,24 +31,24 @@ RM  = rm -f
 endif
 
 # ---- stage0 ----
-# question a: default gcc build (stage0/question_a/output.txt)
-STAGE0_A = stage0/question_a/a_loop_sum$(EXE)
+# question a: default gcc build (dev/stage0/question_a/output.txt)
+STAGE0_A = dev/stage0/question_a/a_loop_sum$(EXE)
 
-# question b: loop_sum and recursion_sum at 4 optimisation levels (stage0/question_b/output.txt)
+# question b: loop_sum and recursion_sum at 4 optimisation levels (dev/stage0/question_b/output.txt)
 OPT_LEVELS = O0 O1 O2 O3
-STAGE0_B = $(foreach p,loop_sum recursion_sum,$(foreach o,$(OPT_LEVELS),stage0/question_b/$(p)_$(o)$(EXE)))
+STAGE0_B = $(foreach p,loop_sum recursion_sum,$(foreach o,$(OPT_LEVELS),dev/stage0/question_b/$(p)_$(o)$(EXE)))
 
 # ---- stageA ----
 # stageA_manual      = Version 0 (engine modules + naive sma.c), timed, no plot files
 # stageA_plot        = writes signals.dat (dev_1M slice, Version 0 SMA) and runs gnuplot
 # Run the timed programs with one dataset: test20 | dev | stress
-STAGEA_V0      = stageA/stageA_manual$(EXE)
-STAGEA_PLOT    = stageA/stageA_plot$(EXE)
+STAGEA_V0      = dev/stageA/stageA_manual$(EXE)
+STAGEA_PLOT    = dev/stageA/stageA_plot$(EXE)
 STAGEA = $(STAGEA_V0) $(STAGEA_PLOT)
 
 # engine modules used by stageA_manual (naive sma.c added in its rule)
-ENGINE_A   = stageA/engine/vwap.c stageA/engine/ohlc.c stageA/engine/signal.c stageA/engine/report.c
-ENGINE_A_H = stageA/engine/vwap.h stageA/engine/ohlc.h stageA/engine/signal.h stageA/engine/report.h
+ENGINE_A   = dev/stageA/engine/vwap.c dev/stageA/engine/ohlc.c dev/stageA/engine/signal.c dev/stageA/engine/report.c
+ENGINE_A_H = dev/stageA/engine/vwap.h dev/stageA/engine/ohlc.h dev/stageA/engine/signal.h dev/stageA/engine/report.h
 TRADE_IO   = helper_function/trade_io.c helper_function/trade_io.h
 
 # ---- benchmark ----
@@ -63,7 +65,7 @@ HELPERS = helper_function/timing.h helper_function/led.h
 # stageC_replay = real-time replay, LED / coloured signals, latency, lag, live P&L
 # stageC_rival  = rival bot P&L for v0 / mem and the R sweep (rival_sweep.dat)
 #
-# Stage C has its own engine in stageC/engine/, built the same way Stage B was
+# Stage C has its own engine in dev/stageC/engine/, built the same way Stage B was
 # built from Stage A: Stage B's modules (vwap, ohlc, sma, sma_naive, signal and
 # their _fx versions) are copied there, and Stage C adds its malloc'd loaders,
 # the AArch64 ohlc_fx.s and the rival bot.
@@ -76,24 +78,24 @@ HELPERS = helper_function/timing.h helper_function/led.h
 #   (none)   trades_fx_fread.c  (one fread)                = ladder V7
 #   _asm     V7 + ohlc_fx.s instead of ohlc_fx.c           Raspberry Pi only (the ladder's V8
 #            links the same assembly, but on V5's loader)
-STAGEC_MALLOC       = stageC/stageC_malloc$(EXE)
-STAGEC_REPLAY       = stageC/stageC_replay$(EXE)
-STAGEC_RIVAL        = stageC/stageC_rival$(EXE)
-STAGEC_REPLAY_MALLOC = stageC/stageC_replay_malloc$(EXE)
-STAGEC_RIVAL_MALLOC  = stageC/stageC_rival_malloc$(EXE)
-STAGEC_REPLAY_ASM   = stageC/stageC_replay_asm$(EXE)
-STAGEC_RIVAL_ASM    = stageC/stageC_rival_asm$(EXE)
-STAGEC_TEST_SORT    = stageC/test_sort$(EXE)
+STAGEC_MALLOC       = dev/stageC/stageC_malloc$(EXE)
+STAGEC_REPLAY       = dev/stageC/stageC_replay$(EXE)
+STAGEC_RIVAL        = dev/stageC/stageC_rival$(EXE)
+STAGEC_REPLAY_MALLOC = dev/stageC/stageC_replay_malloc$(EXE)
+STAGEC_RIVAL_MALLOC  = dev/stageC/stageC_rival_malloc$(EXE)
+STAGEC_REPLAY_ASM   = dev/stageC/stageC_replay_asm$(EXE)
+STAGEC_RIVAL_ASM    = dev/stageC/stageC_rival_asm$(EXE)
+STAGEC_TEST_SORT    = dev/stageC/test_sort$(EXE)
 STAGEC = $(STAGEC_MALLOC) $(STAGEC_REPLAY) $(STAGEC_RIVAL) $(STAGEC_REPLAY_MALLOC) $(STAGEC_RIVAL_MALLOC) $(STAGEC_TEST_SORT)
 
-ENGINE_C_V0   = stageC/engine/vwap.c stageC/engine/ohlc.c stageC/engine/sma.c stageC/engine/sma_naive.c stageC/engine/signal.c helper_function/trade_io.c
-ENGINE_C_CORE = stageC/engine/stream_engine.c stageC/engine/fixed_engine.c stageC/engine/rival.c $(ENGINE_C_V0) stageC/engine/read_trade_fx.c stageC/engine/vwap_fx.c stageC/engine/sma_fx.c stageC/engine/signal_fx.c stageC/engine/percentile.c
-ENGINE_C        = $(ENGINE_C_CORE) stageC/engine/trades_fx_fread.c stageC/engine/ohlc_fx.c
-ENGINE_C_MALLOC = $(ENGINE_C_CORE) stageC/engine/trades_fx_malloc.c stageC/engine/ohlc_fx.c
-ENGINE_C_ASM    = $(ENGINE_C_CORE) stageC/engine/trades_fx_fread.c stageC/engine/ohlc_fx.s
-ENGINE_C_H  = $(wildcard stageC/engine/*.h) $(HELPERS) helper_function/trade_io.h
+ENGINE_C_V0   = dev/stageC/engine/vwap.c dev/stageC/engine/ohlc.c dev/stageC/engine/sma.c dev/stageC/engine/sma_naive.c dev/stageC/engine/signal.c helper_function/trade_io.c
+ENGINE_C_CORE = dev/stageC/engine/stream_engine.c dev/stageC/engine/fixed_engine.c dev/stageC/engine/rival.c $(ENGINE_C_V0) dev/stageC/engine/read_trade_fx.c dev/stageC/engine/vwap_fx.c dev/stageC/engine/sma_fx.c dev/stageC/engine/signal_fx.c dev/stageC/engine/percentile.c
+ENGINE_C        = $(ENGINE_C_CORE) dev/stageC/engine/trades_fx_fread.c dev/stageC/engine/ohlc_fx.c
+ENGINE_C_MALLOC = $(ENGINE_C_CORE) dev/stageC/engine/trades_fx_malloc.c dev/stageC/engine/ohlc_fx.c
+ENGINE_C_ASM    = $(ENGINE_C_CORE) dev/stageC/engine/trades_fx_fread.c dev/stageC/engine/ohlc_fx.s
+ENGINE_C_H  = $(wildcard dev/stageC/engine/*.h) $(HELPERS) helper_function/trade_io.h
 # the replay also drives the breadboard LEDs (GPIO 17 / 27) with --led-gpio
-LED_GPIO_C  = stageC/engine/led_gpio.c
+LED_GPIO_C  = dev/stageC/engine/led_gpio.c
 
 # extra flags for Stage C, e.g. make stageC CFLAGS_C="-O2 -mcpu=cortex-a76" on the Pi
 CFLAGS_C = -O2 -Wall
@@ -104,7 +106,7 @@ ASM_TAG = x86-64
 else
 ASM_TAG = $(shell uname -m)
 endif
-ASM_SRC = stageC/engine/fixed_engine.c stageC/engine/sma_fx.c stageC/engine/signal_fx.c stageC/engine/vwap_fx.c stageC/engine/ohlc_fx.c
+ASM_SRC = dev/stageC/engine/fixed_engine.c dev/stageC/engine/sma_fx.c dev/stageC/engine/signal_fx.c dev/stageC/engine/vwap_fx.c dev/stageC/engine/ohlc_fx.c
 
 # the _asm variant is AArch64 assembly, so it is only part of stageC on the Pi
 ifeq ($(ASM_TAG),aarch64)
@@ -155,11 +157,25 @@ ifeq ($(ASM_TAG),aarch64)
 LADDER += $(LADDER_ASM)
 endif
 
-ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER) $(BENCHMARK) stageC/stageC_gui$(EXE)
+ALL_EXES = $(STAGE0_A) $(STAGE0_B) $(STAGEA) $(STAGEC) $(LADDER) $(SOA) $(BENCHMARK) dev/stageC/stageC_gui$(EXE) \
+           race_demonstration/stageC_replay$(EXE) race_demonstration/stageC_replay_asm$(EXE) race_demonstration/stageC_gui$(EXE)
 
-.PHONY: all stage0 stageA plotA stageC gui asm ladder ladder_asm soa benchmark benchmark_asm clean
+.PHONY: all stage0 stageA plotA stageC gui race race_gui no_gtk asm ladder ladder_asm soa benchmark benchmark_asm clean
 
-all: stage0 stageA stageC ladder
+# 'make' also builds the race window (race_gui), but only when GTK3 is installed:
+# pkg-config is asked first, so a machine without GTK3 (e.g. a fresh Pi) still
+# builds everything else and just prints a note instead of failing.
+HAVE_GTK3 := $(shell pkg-config --exists gtk+-3.0 && echo yes)
+ifeq ($(HAVE_GTK3),yes)
+ALL_GUI = race_gui
+else
+ALL_GUI = no_gtk
+endif
+
+all: stage0 stageA stageC ladder race $(ALL_GUI)
+
+no_gtk:
+	@echo race_gui skipped: GTK3 not found by pkg-config. Install it, then run: make race_gui
 
 stage0: $(STAGE0_A) $(STAGE0_B)
 
@@ -169,55 +185,55 @@ stageA: $(STAGEA)
 plotA: $(STAGEA_PLOT)
 	./$(STAGEA_PLOT)
 
-# question a: gcc stage0/question_a/a_loop_sum.c -o a_loop_sum
-$(STAGE0_A): stage0/question_a/a_loop_sum.c $(HELPERS)
-	$(CC) stage0/question_a/a_loop_sum.c -o $@
+# question a: gcc dev/stage0/question_a/a_loop_sum.c -o a_loop_sum
+$(STAGE0_A): dev/stage0/question_a/a_loop_sum.c $(HELPERS)
+	$(CC) dev/stage0/question_a/a_loop_sum.c -o $@
 
 # question b: gcc -O0 loop_sum.c -o loop_sum_O0   (same pattern for O1, O2, O3 and recursion_sum)
 define QB_RULE
-stage0/question_b/%_$(1)$(EXE): stage0/question_b/%.c $(HELPERS)
+dev/stage0/question_b/%_$(1)$(EXE): dev/stage0/question_b/%.c $(HELPERS)
 	$(CC) -$(1) $$< -o $$@
 endef
 $(foreach lvl,$(OPT_LEVELS),$(eval $(call QB_RULE,$(lvl))))
 
 # stageA Version 0: stageA_manual.c + engine modules + naive sma.c
-$(STAGEA_V0): stageA/stageA_manual.c stageA/engine/sma.c stageA/engine/sma.h $(ENGINE_A) $(ENGINE_A_H) $(TRADE_IO)
-	$(CC) -O2 -Wall stageA/stageA_manual.c $(ENGINE_A) stageA/engine/sma.c helper_function/trade_io.c -o $@
+$(STAGEA_V0): dev/stageA/stageA_manual.c dev/stageA/engine/sma.c dev/stageA/engine/sma.h $(ENGINE_A) $(ENGINE_A_H) $(TRADE_IO)
+	$(CC) -O2 -Wall dev/stageA/stageA_manual.c $(ENGINE_A) dev/stageA/engine/sma.c helper_function/trade_io.c -o $@
 
 # stageA plot: only SMA + signal + report (for the .dat file), naive sma.c = Version 0
-$(STAGEA_PLOT): stageA/stageA_plot.c stageA/engine/sma.c stageA/engine/sma.h stageA/engine/signal.c stageA/engine/signal.h stageA/engine/report.c stageA/engine/report.h $(TRADE_IO)
-	$(CC) -O2 -Wall stageA/stageA_plot.c stageA/engine/sma.c stageA/engine/signal.c stageA/engine/report.c helper_function/trade_io.c -o $@
+$(STAGEA_PLOT): dev/stageA/stageA_plot.c dev/stageA/engine/sma.c dev/stageA/engine/sma.h dev/stageA/engine/signal.c dev/stageA/engine/signal.h dev/stageA/engine/report.c dev/stageA/engine/report.h $(TRADE_IO)
+	$(CC) -O2 -Wall dev/stageA/stageA_plot.c dev/stageA/engine/sma.c dev/stageA/engine/signal.c dev/stageA/engine/report.c helper_function/trade_io.c -o $@
 
 stageC: $(STAGEC)
 
-# stageC malloc (Leroi): same build line as in stageC/stageC_malloc.c
-$(STAGEC_MALLOC): stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageC/engine/trades_malloc.h $(TRADE_IO)
-	$(CC) $(CFLAGS_C) stageC/stageC_malloc.c stageC/engine/trades_malloc.c stageB/engine/vwap.c stageB/engine/ohlc.c stageB/engine/sma.c stageB/engine/signal.c stageB/engine/report.c helper_function/trade_io.c -o $@
+# stageC malloc (Leroi): same build line as in dev/stageC/stageC_malloc.c
+$(STAGEC_MALLOC): dev/stageC/stageC_malloc.c dev/stageC/engine/trades_malloc.c dev/stageC/engine/trades_malloc.h $(TRADE_IO)
+	$(CC) $(CFLAGS_C) dev/stageC/stageC_malloc.c dev/stageC/engine/trades_malloc.c dev/stageB/engine/vwap.c dev/stageB/engine/ohlc.c dev/stageB/engine/sma.c dev/stageB/engine/signal.c dev/stageB/engine/report.c helper_function/trade_io.c -o $@
 
 # default variant: fread loader + C kernels (= ladder V7)
-$(STAGEC_REPLAY): stageC/stageC_replay.c $(ENGINE_C) $(LED_GPIO_C) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C) $(LED_GPIO_C) -o $@
+$(STAGEC_REPLAY): dev/stageC/stageC_replay.c $(ENGINE_C) $(LED_GPIO_C) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) dev/stageC/stageC_replay.c $(ENGINE_C) $(LED_GPIO_C) -o $@
 
-$(STAGEC_RIVAL): stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C) -lm -o $@
+$(STAGEC_RIVAL): dev/stageC/stageC_rival.c $(ENGINE_C) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) dev/stageC/stageC_rival.c $(ENGINE_C) -lm -o $@
 
 # _malloc variant: fgets loader, file read twice (= ladder V6)
-$(STAGEC_REPLAY_MALLOC): stageC/stageC_replay.c $(ENGINE_C_MALLOC) $(LED_GPIO_C) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C_MALLOC) $(LED_GPIO_C) -o $@
+$(STAGEC_REPLAY_MALLOC): dev/stageC/stageC_replay.c $(ENGINE_C_MALLOC) $(LED_GPIO_C) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) dev/stageC/stageC_replay.c $(ENGINE_C_MALLOC) $(LED_GPIO_C) -o $@
 
-$(STAGEC_RIVAL_MALLOC): stageC/stageC_rival.c $(ENGINE_C_MALLOC) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C_MALLOC) -lm -o $@
+$(STAGEC_RIVAL_MALLOC): dev/stageC/stageC_rival.c $(ENGINE_C_MALLOC) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) dev/stageC/stageC_rival.c $(ENGINE_C_MALLOC) -lm -o $@
 
 # _asm variant: V7 with the hand-written AArch64 ohlc_fx.s (Pi only)
-$(STAGEC_REPLAY_ASM): stageC/stageC_replay.c $(ENGINE_C_ASM) $(LED_GPIO_C) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_replay.c $(ENGINE_C_ASM) $(LED_GPIO_C) -o $@
+$(STAGEC_REPLAY_ASM): dev/stageC/stageC_replay.c $(ENGINE_C_ASM) $(LED_GPIO_C) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) dev/stageC/stageC_replay.c $(ENGINE_C_ASM) $(LED_GPIO_C) -o $@
 
-$(STAGEC_RIVAL_ASM): stageC/stageC_rival.c $(ENGINE_C_ASM) $(ENGINE_C_H)
-	$(CC) $(CFLAGS_C) stageC/stageC_rival.c $(ENGINE_C_ASM) -lm -o $@
+$(STAGEC_RIVAL_ASM): dev/stageC/stageC_rival.c $(ENGINE_C_ASM) $(ENGINE_C_H)
+	$(CC) $(CFLAGS_C) dev/stageC/stageC_rival.c $(ENGINE_C_ASM) -lm -o $@
 
-# gcc -S -O2 for each fixed-point kernel -> stageC/asm/<name>_<machine>_O2.s
+# gcc -S -O2 for each fixed-point kernel -> dev/stageC/asm/<name>_<machine>_O2.s
 asm:
-	$(foreach f,$(ASM_SRC),$(CC) -S -O2 -fno-asynchronous-unwind-tables -fno-ident $(f) -o stageC/asm/$(basename $(notdir $(f)))_$(ASM_TAG)_O2.s &&) echo assembly written to stageC/asm/
+	$(foreach f,$(ASM_SRC),$(CC) -S -O2 -fno-asynchronous-unwind-tables -fno-ident $(f) -o dev/stageC/asm/$(basename $(notdir $(f)))_$(ASM_TAG)_O2.s &&) echo assembly written to dev/stageC/asm/
 
 ladder: $(LADDER)
 
@@ -277,11 +293,42 @@ endif
 # Stage C live replay window (GTK3). Not in 'make' / 'make all' because it needs GTK3:
 #   Windows: pacman -S mingw-w64-ucrt-x86_64-gtk3 mingw-w64-ucrt-x86_64-pkgconf (MSYS2 UCRT64)
 #   Pi:      sudo apt install libgtk-3-dev
-STAGEC_GUI = stageC/stageC_gui$(EXE)
+STAGEC_GUI = dev/stageC/stageC_gui$(EXE)
 gui: $(STAGEC_GUI) $(STAGEC_REPLAY)
 
-$(STAGEC_GUI): stageC/stageC_gui.c
-	$(CC) -O2 -Wall stageC/stageC_gui.c $(shell pkg-config --cflags --libs gtk+-3.0) -o $@
+$(STAGEC_GUI): dev/stageC/stageC_gui.c
+	$(CC) -O2 -Wall dev/stageC/stageC_gui.c $(shell pkg-config --cflags --libs gtk+-3.0) -o $@
+
+# ---- race_demonstration ----
+# Lucas's Stage C race (v0 vs mem, live lag + P&L, LED, GUI, GIF), copied from his
+# stageC/ into race_demonstration/ with only the files the replay needs. Built the
+# same way as dev/stageC/stageC_replay: fread loader + C kernels (= ladder V7), and
+# on the Pi also _asm (Yong Sheng's AArch64 ohlc_fx.s in place of ohlc_fx.c).
+RACE_DIR    = race_demonstration
+RACE_CORE   = $(addprefix $(RACE_DIR)/engine/,stream_engine.c fixed_engine.c rival.c vwap.c ohlc.c sma.c \
+              sma_naive.c signal.c read_trade_fx.c vwap_fx.c sma_fx.c signal_fx.c percentile.c \
+              trades_fx_fread.c led_gpio.c) helper_function/trade_io.c
+RACE_H      = $(wildcard $(RACE_DIR)/engine/*.h) $(HELPERS) helper_function/trade_io.h
+RACE_REPLAY     = $(RACE_DIR)/stageC_replay$(EXE)
+RACE_REPLAY_ASM = $(RACE_DIR)/stageC_replay_asm$(EXE)
+RACE_GUI        = $(RACE_DIR)/stageC_gui$(EXE)
+RACE = $(RACE_REPLAY)
+ifeq ($(ASM_TAG),aarch64)
+RACE += $(RACE_REPLAY_ASM)
+endif
+
+race: $(RACE)
+
+race_gui: $(RACE) $(RACE_GUI)
+
+$(RACE_REPLAY): $(RACE_DIR)/stageC_replay.c $(RACE_CORE) $(RACE_DIR)/engine/ohlc_fx.c $(RACE_H)
+	$(CC) $(CFLAGS_C) $(RACE_DIR)/stageC_replay.c $(RACE_CORE) $(RACE_DIR)/engine/ohlc_fx.c -o $@
+
+$(RACE_REPLAY_ASM): $(RACE_DIR)/stageC_replay.c $(RACE_CORE) $(RACE_DIR)/engine/ohlc_fx.s $(RACE_H)
+	$(CC) $(CFLAGS_C) $(RACE_DIR)/stageC_replay.c $(RACE_CORE) $(RACE_DIR)/engine/ohlc_fx.s -o $@
+
+$(RACE_GUI): $(RACE_DIR)/stageC_gui.c
+	$(CC) -O2 -Wall $(RACE_DIR)/stageC_gui.c $(shell pkg-config --cflags --libs gtk+-3.0) -o $@
 
 benchmark: $(BENCHMARK)
 
@@ -298,5 +345,5 @@ else
 endif
 
 # p50 / p99 stretch goal: checks and times the middle-pivot quicksort against qsort
-$(STAGEC_TEST_SORT): stageC/test_sort.c stageC/engine/percentile.c stageC/engine/percentile.h
-	$(CC) $(CFLAGS_C) stageC/test_sort.c stageC/engine/percentile.c -o $@
+$(STAGEC_TEST_SORT): dev/stageC/test_sort.c dev/stageC/engine/percentile.c dev/stageC/engine/percentile.h
+	$(CC) $(CFLAGS_C) dev/stageC/test_sort.c dev/stageC/engine/percentile.c -o $@

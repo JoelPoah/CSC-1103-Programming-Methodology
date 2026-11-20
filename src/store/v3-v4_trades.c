@@ -1,7 +1,7 @@
 /*
  * v3-v4_trades.c - load all trades into memory (Leroi, see trades.h)  (V3, V4)
  *
- * Same as stageB/engine/trades.c, except each trade is read with the
+ * Same as dev/stageB/engine/trades.c, except each trade is read with the
  * Stage A+ reader read_trade() (link v2-v4_read_trade_fast.c) instead of the
  * helper library, so the in-memory versions keep the V2 reader.
  */
