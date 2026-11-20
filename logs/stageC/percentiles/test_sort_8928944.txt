@@ -1,0 +1,14 @@
+percentile() hand-worked checks: pass
+n = 8928944 values per test (times in ms)
+
+data          qsort     middle       joel   result
+random      1574.79     963.08    skipped   p50 500021339  p99 990002855
+timing      1087.77     443.39    skipped   p50 50  p99 60
+sorted       475.86     196.33    skipped   p50 4464471  p99 8839654
+equal        475.60     355.14    skipped   p50 50  p99 50
+
+ALL CHECKS PASS
+exit=0
+--- after test_sort 8928944
+throttled=0x0
+temp=43.9'C

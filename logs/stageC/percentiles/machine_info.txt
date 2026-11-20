@@ -1,0 +1,10 @@
+date: 2026-11-20T12:42:51+08:00
+uname: Linux raspberrypi 6.18.60+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.60-1+rpt1 (2026-11-03) aarch64 GNU/Linux
+
+gcc (Debian 14.2.0-19) 14.2.0
+
+governor (cpu0-3): performance performance performance performance 
+cpu max freq kHz: 2400000
+model: Raspberry Pi 5 Model B Rev 1.1
+git: c25528f Stage C stretch goal: p50 / p99 latency with a middle-pivot quicksort
+pinned core: taskset -c 2

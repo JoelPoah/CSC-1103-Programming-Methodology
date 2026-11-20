@@ -1,0 +1,14 @@
+percentile() hand-worked checks: pass
+n = 20000 values per test (times in ms)
+
+data          qsort     middle       joel   result
+random         2.13       1.62       1.45   p50 502629405  p99 990737837
+timing         1.66       0.84       8.55   p50 50  p99 989
+sorted         0.66       0.33     393.05   p50 9999  p99 19799
+equal          0.66       0.49     167.87   p50 50  p99 50
+
+ALL CHECKS PASS
+exit=0
+--- after test_sort 20000
+throttled=0x0
+temp=41.1'C
