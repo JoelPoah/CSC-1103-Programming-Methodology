@@ -11,6 +11,8 @@ int main()
     uint64_t start, end;
     uint64_t n = 10000;
     uint64_t total = 0;
+
+    led_init();  //  run in sudo for rpi
     led_on(LED_GREEN);
     start = now_ns();
 
@@ -24,4 +26,7 @@ int main()
 
     printf("sum: %" PRIu64 "\n", total);
     printf("Time taken: %" PRIu64 " ns\n", end - start);
+
+    led_cleanup();
+    return 0;
 }

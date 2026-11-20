@@ -1,22 +1,12 @@
-// v8_ohlc_fx.s - AArch64 (64-bit ARM) version of engine_fx/v5-v7_ohlc_fx.c (Yong Sheng, V8)
-//
-// Copied unchanged from assembly/ohlc_fx.s, apart from this header.
-// V8 = V5 with this file linked instead of v5-v7_ohlc_fx.c, so any speed
-// difference comes from the assembly alone. The assembly SMA is NOT linked here:
-// it is measured on its own in v8_stageB_asm_sma (v8_sma_fx.s).
+// v8_ohlc_fx.s - AArch64 (64-bit ARM) version of engine_fx/v5-v7_ohlc_fx.c
 // AArch64 Linux only (the Raspberry Pi): "make ladder" builds V8 there.
-//
-//
-// One-second OHLC bars with fixed-point prices.
-// Drop-in replacement for ohlc_fx.c: same function names, same OhlcBarFx layout.
 //
 // Build:  gcc -c ohlc_fx.s -o ohlc_fx.o      (on a 64-bit Raspberry Pi OS)
 //
 // Calling convention (AAPCS64):
-//   x0-x7   integer/pointer arguments, w0/x0 = integer return value
+//   x0-x7   integer/pointer arguments, 
+//   w0/x0 = integer return value,
 //   x9-x15  scratch registers (free to use, not preserved)
-// Both functions are leaf functions (they call nothing), so neither needs
-// a stack frame.
 //
 // Speed-ups over the compiler's version of ohlc_fx.c:
 //   1. No division on the common path. "Is this trade still in the same
@@ -29,9 +19,10 @@
 //   3. Paired loads/stores (ldp/stp) for neighbouring fields.
 
 // ---------------------------------------------------------------------------
-// CONSTANTS - This section involve assigning the number a name (eg. line 27: assign 1000000 to MICROS_PER_SEC)
+// CONSTANTS - This section involve assigning the number a name 
+// (eg. line 27: assign 1000000 to MICROS_PER_SEC)
 // ---------------------------------------------------------------------------
-        .equ    MICROS_PER_SEC, 1000000     // <-- check against ohlc.h
+        .equ    MICROS_PER_SEC, 1000000    
 
 // OhlcBarFx layout (48 bytes):
 // Similar to creating a struct, this assigns the memory address based on the size(bytes) of datatype. 
@@ -127,7 +118,7 @@ ohlc_fx_update:
         cmp     x2, x13                     // compare price and low
         csel    x13, x2, x13, lt            // if price is lesser than low then low  = min(low, price)
 
-        stp     x12, x13, [x0, #B_HIGH]     // store pair: write the new? high and low back into the bar
+        stp     x12, x13, [x0, #B_HIGH]     // store pair: write the new high and low back into the bar
         ldr     w12, [x0, #B_N]             // load n (trade count) into w12 (w is for 4 bytes data)
         add     w12, w12, #1                // increment n by 1
         str     x2,  [x0, #B_CLOSE]         // close = price (the latest trade is set as the close)
@@ -169,6 +160,8 @@ ohlc_fx_update:
         stp     x2, x12, [x0, #B_CLOSE]     // store pair: close = price, n = 1, active = 1
         mov     w0, w14                     // return value = closed (1=bar finished, 0=first bar)
         ret
-        .size   ohlc_fx_update, .-ohlc_fx_update // housekeeping: records the function's size in bytes (current position "." minus the start of the function)
+        .size   ohlc_fx_update, .-ohlc_fx_update 
+        // housekeeping: records the function's size in bytes (current position "." minus the start of the function)
 
-        .section .note.GNU-stack, "", %progbits  // tells the linker this code does not need an executable stack (does nothing at run time)
+        .section .note.GNU-stack, "", %progbits  
+        // tells the linker this code does not need an executable stack (does nothing at run time)

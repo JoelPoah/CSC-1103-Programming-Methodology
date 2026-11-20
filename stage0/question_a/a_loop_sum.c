@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <inttypes.h>
 #include "../../helper_function/timing.h"
+#include "../../helper_function/led.h"
 
 int counter(int n);
 
@@ -11,6 +12,8 @@ int main()
     uint64_t total = 0;
     long long input;
     char extra;
+
+    led_init();  //  run in sudo on rpi
 
     /* keep asking until the user enters a positive whole number */
     while (1)
@@ -29,16 +32,17 @@ int main()
         }
     }
     n = (uint64_t)input;
-
+    led_on(LED_GREEN);
     start = now_ns();
-
     for (uint64_t i = 1; i <= n; i++)
     {
         total += i;
     }
-
     end = now_ns();
+    led_off(LED_GREEN);
     printf("sum: %" PRIu64 "\n", total);
     printf("Time taken: %" PRIu64 " ns\n", end - start);
 
+    led_cleanup();
+    return 0;
 }

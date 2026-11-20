@@ -2,13 +2,66 @@ Prediction 1: Higher optimisation level = faster
 
 Expected: We thought each step up in optimisation level would make the program run faster, with the biggest jump showing up between O0 and O2.
 
-Result: O2 was much faster than O0 on both the laptop and the Pi (laptop loop 9,620 ns → 60 ns, laptop recursion 529,560 ns → 20 ns, Pi loop 42,781 ns → 81 ns, Pi recursion 111,487 ns → 92 ns).
+This prediction covers both question a (sum of 1..N, N = 100,000,000, with N entered by
+the user and with N fixed in the code) and question b (loop vs recursion, n = 10,000 fixed
+in the code). All times are the median of 5 runs, pinned to one core on both machines.
 
-O1 was more mixed than we expected. It sped up the loop (1.70x on the laptop, 6.32x on the Pi) but did very little for recursion (1.23x on the Pi). On the laptop, the O1 recursion average actually came out slower than O0, but those runs varied a lot, so we don't trust that number much. O3 was no faster than O2 on either machine, which we didn't predict.
+Result: Partly true. Runtime always stopped improving after one level, but which level
+depended on whether the compiler could work out the answer while compiling.
 
-Reason: With optimisation on, the compiler can cut out or simplify instructions, for example by keeping variables in CPU registers instead of reading and writing them in memory every time. That explains why the loop improves at O1. Recursion doesn't improve much at O1 because it still makes 10,000 real function calls, and the calls are the expensive part.
+  Question a, N entered by user    -O0        -O1        -O2        -O3
+    Laptop                         45.5 ms    27.2 ms    27.2 ms    27.3 ms
+    Pi                             278.3 ms   41.7 ms    41.7 ms    41.8 ms
 
-The huge drop at O2 is a different effect. Since n = 10000 is fixed in our code, the compiler works out the answer (50005000) while compiling, and the program just prints it. So the times under 100 ns aren't really measuring our code at all, only the smallest step the timer can show. This also explains O3: there is no work left for it to remove. We saw the same pattern on both machines, which tells us it comes from the compiler and not the hardware.
+  Question a, N fixed in code
+    Laptop                         45.4 ms    27.3 ms    0 ns       0 ns
+    Pi                             278.4 ms   41.7 ms    55 ns      56 ns
+
+  Question b (n = 10,000 fixed)
+    Laptop loop                    4,700 ns   2,700 ns   0 ns       100 ns
+    Laptop recursion               332,400 ns 345,500 ns 0 ns       0 ns
+    Pi loop                        26,715 ns  8,386 ns   55 ns      56 ns
+    Pi recursion                   76,446 ns  62,931 ns  55 ns      56 ns
+
+- N entered by the user (question a): the prediction was wrong. The whole speedup came at
+  O1 (Laptop 1.67x, Pi 6.67x) and O2 was no faster than O1.
+- N or n fixed in the code (question a fixed version, question b loop and recursion): the
+  prediction held. The biggest drop was between O1 and O2, where the time fell to
+  almost nothing.
+- O3 was never faster than O2, in any program on either machine, which we did not predict.
+
+Reason: At O0 the compiler reads and writes i and total in memory on every pass. From O1
+it keeps them in CPU registers, which gives the first speedup for the loops (question a
+both versions; question b loop 1.74x Laptop, 3.19x Pi). Recursion barely improves at O1
+(0.96x Laptop, 1.21x Pi) because it still makes 10,000 real function calls, and on the
+Laptop most of that time is Windows growing the stack for those calls, which O1 cannot avoid.
+
+When N is entered by the user, the compiler cannot know N, so the loop must run. According
+to the GCC documentation (https://gcc.gnu.org/onlinedocs/gcc/Optimize-Options.html), O2
+adds many loop optimisations, including vectorisation (-ftree-loop-vectorize,
+-ftree-slp-vectorize) since GCC 12, and O3 adds more aggressive ones (-fpeel-loops,
+-fsplit-loops, -funswitch-loops, -floop-interchange). None of them helped: gcc -S showed
+that O2 and O3 produce identical machine code for this loop (unrolled 2 times, no SIMD), so
+the times could not differ. Each "total += i" has to wait for the previous addition, so
+the loop can do at most one addition per clock cycle. The Pi reaches exactly that limit
+already at O1: 41.7 ms / 100,000,000 = 0.417 ns = 1 cycle at 2.4 GHz. gcc probably does not
+vectorise because with "i <= n" the loop would never end if n were the largest uint64_t
+value, so it cannot work out how many times the loop runs (likely, not confirmed).
+
+When N or n is fixed, the compiler works out the answer itself. The assembly shows this
+already happens at O1 for the loops: 5000000050000000 (question a) and 50005000 (question
+b) appear as constants. But O1 leaves an empty loop behind that only counts down, which
+still costs one cycle per pass. That is why the fixed version takes the same time as the
+user-input version at O1, even though it does no additions. O2 deletes the empty loop, and
+for recursion O2 works out the answer instead of making the 10,000 calls. After that the
+program only prints the answer, so the times under 100 ns measure only how long it takes
+to read the clock (the timer's smallest steps), not our code. O3 has nothing left to remove.
+We saw the same pattern on both machines, so it comes from the compiler, not the hardware.
+
+Conclusion: a higher optimisation level only helps while there is still work to remove.
+For a loop that really has to run, O1 already gets all the benefit. When the answer can be
+worked out while compiling, O2 removes the work entirely. O3 added compile time and code
+size with no gain anywhere, so O2 is the sensible default for this program.
 
 
 Prediction 2: Laptop faster for the loop, Pi faster for recursion

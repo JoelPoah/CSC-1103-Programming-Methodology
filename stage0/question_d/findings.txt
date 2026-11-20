@@ -1,0 +1,175 @@
+STAGE 0 FINDINGS (questions a-d)
+================================
+All of Stage 0 in one place. Full raw runs and longer explanations are in:
+    question_a/output.txt, results_laptop.dat, results_pi.dat, a_O1.s
+    question_b/output.txt, b_O1.s
+    question_c/*.png (charts) and charts.gnuplot
+    question_d/prediction.txt (prediction logbook)
+
+
+1. SET-UP AND METHOD
+--------------------
+Laptop: Intel Core Ultra 7 258V, Windows 11, gcc 15.2.0 (MSYS2).
+        Pinned to performance core CPU 4 at high priority:
+        cmd /c "start /b /wait /high /affinity 10 <program>.exe"
+Pi:     Raspberry Pi 5 (Cortex-A76, 2.4 GHz), Raspberry Pi OS 64-bit, gcc 12.2.0.
+        Run with sudo (needed for the LED), pinned with taskset -c 2,
+        CPU governor set to performance:
+        sudo sh -c 'echo performance > /sys/devices/system/cpu/cpu2/cpufreq/scaling_governor'
+        sudo taskset -c 2 ./<program>
+Both:   Each binary compiled at -O0, -O1, -O2, -O3, run 5 times, MEDIAN reported
+        (brief p. 11, step 5). Speedup = O0 time / Ox time. Timing with now_ns().
+
+
+2. QUESTION A: SUM 1..N, N = 100,000,000
+---------------------------------------
+a_loop_sum.c (N entered by user), median time:
+
+    Flag   Laptop             Pi                 Laptop faster by
+    -O0    45.5 ms (1.00x)    278.3 ms (1.00x)   6.1x
+    -O1    27.2 ms (1.67x)     41.7 ms (6.67x)   1.53x
+    -O2    27.2 ms (1.67x)     41.7 ms (6.67x)   1.53x
+    -O3    27.3 ms (1.67x)     41.8 ms (6.66x)   1.53x
+
+a_loop_sum_fixed.c (N fixed in the code), median time:
+
+    Flag   Laptop             Pi
+    -O0    45.4 ms            278.4 ms
+    -O1    27.3 ms             41.7 ms
+    -O2    0 ns (removed)      55 ns (removed)
+    -O3    0 ns (removed)      56 ns (removed)
+
+Findings:
+  A1. -O1 gives the whole speedup; -O2 and -O3 add nothing. At -O0, i and total are
+      read from and written to memory on every pass. From -O1 they stay in registers.
+      -O2 and -O3 build identical machine code for this loop (gcc -S: unrolled 2 times,
+      no SIMD), so they cannot differ.
+  A2. The optimised loop runs at exactly 1 addition per clock cycle. Pi: 41.7 ms /
+      100,000,000 = 0.417 ns = 1.0 cycle at 2.4 GHz. Each "total += i" has to wait for
+      the one before, so 1 per cycle is the limit, and unrolling cannot beat it.
+  A3. Fixed N: the compiler works out the answer itself. At -O2 the whole loop is gone
+      (5000000050000000 is a constant in the assembly), so the time is only the cost of
+      reading the clock. Already at -O1 the answer is a constant, but gcc leaves an
+      empty countdown loop behind, which still costs 1 cycle per pass. That is why the
+      fixed and user-input versions take the same time at -O1.
+  A4. With N entered by the user, the compiler cannot know N, so the loop must run.
+      This is the "watch the optimiser" effect from the brief (p. 5).
+  A5. No SIMD at -O3: likely because "i <= n" would never end if n were the largest
+      uint64_t value, so gcc cannot work out how many passes there are. Not confirmed.
+  A6. The old Pi result (2.82 s at -O0, 10x the fixed version) did not happen again with
+      the method above; both versions take 278 ms. It is exactly 10x the new time, which
+      fits N being typed as 1,000,000,000 by mistake. Not confirmed (sum not saved).
+
+
+3. QUESTION B: LOOP VS RECURSION, n = 10,000 (fixed in the code)
+---------------------------------------------------------------
+Median time in ns:
+
+    Flag   Laptop loop      Laptop recursion   Pi loop          Pi recursion
+    -O0    4,700 (1.00x)    332,400 (1.00x)    26,715 (1.00x)   76,446 (1.00x)
+    -O1    2,700 (1.74x)    345,500 (0.96x)     8,386 (3.19x)   62,931 (1.21x)
+    -O2        0                0                  55               55
+    -O3      100                0                  56               56
+
+Findings:
+  B1. Recursion is much slower than the loop: about 70x on the Laptop and 2.9x on the
+      Pi at -O0. Every call pushes a return address and a stack frame and pops them
+      again; the loop just adds.
+  B2. At -O1 the loop no longer adds anything. n is fixed, so gcc puts the answer in as a
+      constant (0x02FB0408 = 50,005,000 in b_O1.s) and only an empty countdown from 10,000
+      is timed. Seen in the assembly on both machines. So the -O1 loop time is not
+      comparable with question a's -O1 loop, which really adds.
+  B3. The Pi's empty loop took 0.84 ns per pass (2 cycles) here but 0.417 ns (1 cycle)
+      over 100,000,000 passes in question a. So the 2 cycles here are most likely a
+      start-up effect of such a short run (8 us). Not confirmed.
+  B4. Recursion is still 10,000 real calls at -O1. Only -O2 computes it in advance.
+  B5. Laptop recursion is slow because Windows grows the stack. Test: counter(10000) called
+      3 times in one process (-O0, pinned): 1st call 329-364 us, 2nd and 3rd 86-139 us.
+      About 70% of the first call is a one-time cost. Each call uses 48 bytes of stack
+      (return address + saved rbp + 32 bytes of Windows "shadow space"), so 10,000 calls
+      need about 480 KB = about 117 new 4 KB pages, added one at a time by Windows
+      (guard-page faults). Our program calls counter once, so it always pays this cost.
+      This is also why -O1 recursion (0.96x) is no faster on the Laptop.
+  B6. Once the stack has grown, a Laptop call costs about 9 ns; a Pi call costs about
+      7.6 ns including its own stack growth. The Pi needs far fewer new pages (smaller
+      ARM frames, larger kernel pages). The Pi side is likely, not measured.
+  B7. The -O2/-O3 numbers measure only the timer: the Laptop timer counts in 100 ns
+      steps (0 or 100), the Pi timer in about 18.5 ns steps (37, 55-56, 74).
+
+
+4. QUESTION C: LED AND CHARTS
+-----------------------------
+  C1. The LED goes green just before each timed loop and off right after it.
+      a_loop_sum.c, a_loop_sum_fixed.c and loop_sum.c were calling led_on() without
+      led_init(). Without led_init(), the Pi never takes control of the LED, even with
+      sudo, and only prints. Fixed: led_init() at the start of main and led_cleanup()
+      at the end of all three (recursion_sum.c already had them). The LED calls are
+      outside the timed part, so the timings are not affected.
+  C2. The LED is only visible on the 100,000,000 loop (question a): it stays on for about
+      278 ms at -O0 and 42 ms at -O2 on the Pi. Question b's loops (microseconds) are too
+      short to see. The Pi LED has not yet been filmed for the demo video.
+  C3. Charts (all in question_c, same colours: blue = laptop / first series,
+      orange = Pi / second series):
+        windows_chart_a.png, rpi_chart_a.png  - question a, both programs, per machine
+        compare_chart_a.png                   - question a, Laptop vs Pi: time and speedup
+        windows_chart_b.png, rpi_chart_b.png  - question b, loop vs recursion (log scale)
+        compare_chart_b.png                   - question b, Laptop vs Pi
+      Regenerate: in question_a, gnuplot -e "machine='laptop'" plot_question_a.gnuplot
+      (and machine='pi'), gnuplot compare_question_a.gnuplot; in question_c,
+      gnuplot charts.gnuplot.
+
+
+5. LAPTOP VS PI (brief p. 6, CSC1104 item 2: -O0 and -O2)
+---------------------------------------------------------
+  P1. At -O2 the Laptop is 1.53x faster on the loop. Both machines do 1 addition per
+      cycle, so the gap is clock speed: the Pi runs at 2.4 GHz, and 1.53x means the
+      Laptop runs at about 3.7 GHz. That is within the 258V's boost range; the Laptop
+      clock was not measured.
+  P2. At -O0 the gap grows to 6.1x. Each pass stores total and i to memory and loads them
+      straight back: about 6.7 cycles per number on the Pi, about 1.7 on the Laptop. The
+      Laptop's core gets a value it has just stored back to the next instruction much
+      faster. Likely, from the cycle counts; not measured with hardware counters.
+  P3. The optimiser helps the Pi much more (6.67x vs 1.67x), because the Pi's -O0 code
+      is so much slower.
+  P4. The Pi beats the Laptop on recursion (4.3x at -O0, 5.5x at -O1), because of the
+      Windows stack growth in B5.
+
+
+6. QUESTION D: PREDICTION LOGBOOK - WHAT THE MEASUREMENTS CHANGED
+-----------------------------------------------------------------
+prediction.txt still uses the OLD averages (unpinned, Pi not at full speed).
+These parts need updating to match the measurements above:
+  - Prediction 1 (higher -O = faster): partly true. -O1 gives all of the gain;
+    -O2/-O3 add nothing for question a (A1). For question b, the "huge drop at O2" for
+    the loop already starts at -O1 (B2).
+  - Prediction 1 numbers: replace 9,620 / 529,560 / 42,781 / 111,487 ns with the medians
+    in section 3. The Laptop -O1 recursion "slower than -O0" is now explained by stack
+    growth (B5), not just noise.
+  - Prediction 2 (Laptop wins the loop, Pi wins recursion): held. Laptop loop 5.7x at -O0,
+    Pi recursion 4.3x at -O0 and 5.5x at -O1 (old file says 4.4x, 4.7x and 7.6x). The cause
+    is now measured on the Laptop side (B5) rather than only guessed.
+  - The brief asks for each entry to be dated and signed by the member who made it.
+
+
+7. METHOD LESSONS (worth a logbook entry of their own)
+------------------------------------------------------
+  M1. Pin the Laptop to one core. Unpinned, Windows moved the program between fast and
+      low-power cores: -O0 ranged from 76 to 257 ms and medians from two unpinned
+      batches disagreed by up to 30%. Pinned, runs agree within 1%. Fast cores
+      (CPU 4-7): 45.4-45.5 ms; low-power cores (CPU 0-3): 154-178 ms.
+  M2. Set the Pi governor to performance. Older Pi question b runs were at 1.5 GHz:
+      the -O1 loop took exactly 1 cycle per pass at 1.5 GHz, not at 2.4 GHz.
+  M3. The median protects against the odd slow run (e.g. Pi -O1 recursion: 2 of 5 runs
+      at about 131-134 us), but not against most runs being slow. That needs M1 and M2.
+  M4. Tiny timings (question b at -O2/-O3) only measure the timer. Fixing n in the
+      code lets gcc remove work from -O1 upwards; always check with gcc -S.
+
+
+8. OPEN POINTS
+--------------
+  - Brief p. 5, 1(b): "N = 10,000, repeated many times". Both question b programs time a
+    single call. Repeating it thousands of times would lift the times well above the
+    timer step and spread the Laptop's one-time stack growth over many calls.
+  - Optional: perf stat on the Pi would confirm A2's "1 cycle per addition" directly
+    (not required for Stage 0).
+  - Film the Pi LED at -O0 vs -O2 (question a) for the demo video.
